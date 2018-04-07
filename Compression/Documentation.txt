@@ -1,0 +1,349 @@
+﻿// inspired from Akumuli code, an open source time-series database
+// see http://akumuli.org/akumuli/2017/02/05/compression_part2/
+// see https://docs.google.com/document/d/1yLsN1j8xxnm_b0oN6rFSgWOnCHP-OlJC5pBKZQwTAPc/pub (Compression algorithms in Akumuli)
+// see https://github.com/akumuli/Akumuli/blob/master/libakumuli/storage_engine/compression.cpp
+
+
+// important note on performance
+// The current code has been as optimized as possible for C#. Sadly, the lack of CPU intrinsics proved to be a major drawback with no solution.
+// As long as C# does not support intrinsics, C++ will always provide much better performance because of one notable operation: __builtin_clz/__builtin_ctz.
+// Should the support for BSF/BSR intrinsic be added one day to C#, then BitMethods.CountZeroBytes()/CountLeadingZeroBytes()/CountTrailingZeroBytes() 
+// would be in dire need of a re-write for the much needed speedup.
+// This above is the reason that DataStreamWriter_UInt64_LSB is 2x the speed of DataStreamWriter_UInt64; it uses half the amount of counts.
+
+// important notes for SIMD to work:
+// 1- only works in Release mode
+// 2- Tools -> Options -> Debugging -> General ensure that "Suppress JIT optimization on module load" is unchecked.
+
+
+
+// for performance reasons, every column will be faster to read/write when using the unsigned version of it.
+// if you do not need negative values, then consider changing your data accordingly.
+// Every signed integers will have to go through BitMethods.SignedToUnsigned() and vice verse in order to save a huge amount of storage.
+// This operation comes at a performance cost
+// Also, DeltaDelta encoding will tend to do horrible on signed data.
+// Compared to akumuli, the main performance differences are due to assumptions, such as assuming DeltaDelta data will be on never-decreasing values.
+// Since this code does not support/enforce that rule, we must revert to assuming that DeltaDelta columns may decrease. 
+// This causes considerable performance loss;
+//    * All signed values must go through SignedToUnsigned(), which prevents SIMD code (no support for bitshifting in System.Numerics.Vector)
+//    * All signed values mean we must check both CountLeadingZero() and CountTrailingZero(), which almost doubles the encoding time on top of the lack of proper intrinsics
+//    * Since theres multiple convertions, most of the signed classes have supplemental wrappers in order to transform the data pipeline.
+//      This results in many extra cache layers, impacting multiple small-writes speeds (some are pass-through, some have local caches)
+// If you need really high performance and make the assumption that the data is sorted (and thus dodge all of this, resulting in some 2-10x speed gains)
+// To do that, just make sure your DeltaDelta class/encoder does not use any signed encoder, and that no calls are made to UnsignedToSigned()/SignedToUnsigned() anywhere, since you can now assume there cannot be overflows.
+// This consequently allows the class to use SIMD/System.Numerics.Vector, for which there are multiple examples.
+
+
+// While the code supports resuming pages, you should avoid abusing the feature. The reason is that while every optimisation that could be made has been made,
+// the fact is the entire premise of the timeseries data is that values depend on the previous one to encode itself efficiently. This means resuming a page, 
+// for the most part, has no other option than re-reading the entire page. This applies to all Xor/Delta/DeltaDelta/DFCM encodings. Furthermore, if any compression
+// is applied to the streams, this can result in modified bytes, meaning we cannot just append to the end of the stream. This means that again, for compressed streams,
+// the entirety of the data has to be recompressed in order to support page resuming.
+
+
+
+// SUPPORTED ColumnDefinitions
+// 
+//     type         bit_size         encoding_type                                             compression
+//     ----------------------------------------------------------------------------------------------------
+//     datetime     64*              none, delta, deltadelta*, xor                             nocompress, zlib.level=fastest, lz4.level=fast, zstd.level=3*
+//     timespan     64*              none, delta, deltadelta*, xor                             nocompress, zlib.level=fastest, lz4.level=fast, zstd.level=3*
+//     decimal      128*             none*                                                     nocompress, zlib.level=fastest, lz4.level=fast, zstd.level=3*
+//     double       64*              none, xor, dfcm*                                          nocompress, zlib.level=fastest, lz4.level=fast, zstd.level=3*
+//     float        32*              none, xor, dfcm*                                          nocompress, zlib.level=fastest, lz4.level=fast, zstd.level=3*
+//     UInt64       64* (var)        none, delta, deltadelta, xor*                             nocompress, zlib.level=fastest, lz4.level=fast, zstd.level=3*
+//     UInt32       32* (var)        none, delta, deltadelta, xor*                             nocompress, zlib.level=fastest, lz4.level=fast, zstd.level=3*
+//     UInt16       16*              none, delta, deltadelta, xor*                             nocompress, zlib.level=fastest, lz4.level=fast, zstd.level=3*
+//     UInt8        1, 2, 4, 8*      (1, 2, 4*) = none*, 8* = none*, delta, deltadelta, xor    nocompress, zlib.level=fastest, lz4.level=fast, zstd.level=3*
+//     Int64        64* (var)        none, delta, deltadelta, xor*                             nocompress, zlib.level=fastest, lz4.level=fast, zstd.level=3*
+//     Int32        32* (var)        none, delta, deltadelta, xor*                             nocompress, zlib.level=fastest, lz4.level=fast, zstd.level=3*
+//     Int16        16*              none, delta, deltadelta, xor*                             nocompress, zlib.level=fastest, lz4.level=fast, zstd.level=3*
+//     Int8         1, 2, 4, 8*      (1, 2, 4*) = none*, 8* = none*, delta, deltadelta, xor    nocompress, zlib.level=fastest, lz4.level=fast, zstd.level=3*
+//     bool         1*               none*                                                     nocompress, zlib.level=fastest, lz4.level=fast, zstd.level=3*
+//     string       var*             none*                                                     nocompress, zlib.level=fastest, lz4.level=fast, zstd.level=3*
+//     byte[]       var*             none*                                                     nocompress, zlib.level=fastest, lz4.level=fast, zstd.level=3*
+//     stream       var*             none*                                                     nocompress, zlib.level=fastest, lz4.level=fast, zstd.level=3*
+//     
+//     * = default
+//
+// hidden "var" bitsize encoding option: search code for 'USE_TWO_CHANNEL'
+// enabling this option will separate the variable encoding lengths per item on their own separate channel
+// this leads to better compression having similar data grouped together (in the order of 5-10% better overall compression).
+// this option is not on by default as it results in fragmented data making recovery a lot harder in case of shutdowns
+
+
+
+
+// PAGE FORMAT
+// -----------------------------
+// magic_signature    uint32                (TSDB)
+// serie_unique_id    uint32                (for fast page filtering -- assumes that all serie with the same id will have identical serie definition data)
+//                                          (this is intended in case your code keeps the list of all series emitted, allowing quick filtering)
+// page_version       uint8                 (always 0)
+// row_count          uint64                (not variable sized in order to allow writing data before finalizing the page)
+//                                          contains ulong.MaxValue until the Page is finalized
+// serie              string encoding       (optional UTF-8 encoded string)
+//                                          see SerieDefinition format.
+//                                          see BitMethods.EncodeString() for encoding; uses BitMethods.WriteVarUInt64() followed by UTF-8 raw data
+//                                                                                      encoded_utf8_length uses 0 for null, 1 for string.Empty, otherwise string.Length - 1
+//                                          ex: "colevel room=42 building=2 floor=1 wing=East sensor=A\nTimeStamp DateTime,64,Delta\nValue Double,64,DFCM"
+// raw data           multi-channel stream  (see multi-channel stream format)
+//                                          the multi-channel stream format allows storing multiple streams together efficiently, assigning a simple ChannelID for each sub-stream
+//                                          The channel 0 is reserved for statistics, and its sizing is pre-reserved in order to make sure the first segment will
+//                                          always contain contiguous statistics data. This allows reading statistics without having to parse the multi-channel stream indices.
+//                                          The columns ChannelID(s) follows a simple rule of ID assignment as follows;
+//
+//                                          ex: serie="FileName string,,\nContent byte[],,"
+//                                          [FileName column 0].ChannelCount = 2
+//                                              -> ChannelID = 1
+//                                              -> ChannelID = 2
+//                                          [Content column 1].ChannelCount = 2
+//                                              -> ChannelID = 3
+//                                              -> ChannelID = 4
+
+
+
+
+// MULTI-CHANNEL STREAM FORMAT
+// -------------------------------------
+// The multi-channel stream format is meant to support efficient write without needing to store any cache.
+// As such, the data is written WAL-style (write-ahead log).
+//
+// indexed_data_pointer          uint64 (not var-sized because we want to begin writing immediately)
+//                                      (contains 0xFFFFFFFFFFFFFFFF until the index is built)
+//                                      (since this is always written last, it is assumed that if this value is set, it means the full index is built.)
+// segment_data                  n      (the data, format specified below)
+//
+// indexed_data format
+// -------------------
+// index_size                    uint64 (not including itself)
+// DataStream_UInt64_LSB (efficient uint64[] encoding)   (could use DFCM for more space savings)
+//  -> channel_count             uint64
+//  -> segment_count             uint64
+//  -> channel_n_id              uint64 (n times) -> segment_count entries
+//  -> segment_n_length          uint64 (n times) -> segment_count entries, includes segment_header_size + segment_data_length
+//
+// segment_data format
+// -------------------
+// channel_id                    var uint64
+// segment_data_length           uint24      (3 bytes LE)  (see MAX_SEGMENT_DATA_ENCODING_SIZE_IN_BYTES)
+// data                          n           (of segment_data_length)
+
+
+
+
+// SERIE DEFINITION FORMAT
+//
+//     [optional metric-name] [tag1]=[tag-value1] [tag2]=[tag-value2]...[tagN]=[tag-valueN]
+//     [optional column1_name] [Type],[optional bit_size],[optional encoding_type],[optional compression_setting]        (ColumnDefinition)
+//
+// example
+//     colevel room=42 building=2 floor=1 wing=East sensor=A
+//     TimeStamp datetime,64,DeltaDelta,NoCompress
+//     Value string,[var],[None],[zstd.level=10]
+//     DummyColumn int
+
+
+
+// COLUMNDEFINITION FORMAT
+//
+//     [optional column1_name] [Type],[optional bit_size],[optional encoding_type],[optional compression_setting]
+//
+// example
+//     TimeStamp DateTime,64,DeltaDelta,NoCompress
+//     Value string,[var],[None],[zstd.level=10]
+//     DummyColumn int
+
+
+
+// ENCODINGTYPE
+//
+//        None
+//
+//        Delta       Stores the difference between the current value and the previous one.
+//                    ex: [5,10,20,30] -> [5,5,10,10]
+//
+//        DeltaDelta  Stores the difference between the current value and the previous one minus common delta across 16 items frame.
+//                    This stores very efficiently cyclic timestamps.
+//
+//                    ex: [50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65]      -> [1,50,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+//                        [0,10,20,30,40,50,60,70,80,90,100,110,120,130,140,150] -> [10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+//                        [5,10,20,30,40,50,60,70,80,90,100,110,120,130,140,150] -> [5,5,0,5,5,5,5,5,5,5,5,5,5,5,5,5,5]
+//
+//        XOR         Stores the 'previous_value XOR current_value'.
+//                    Works well for windowed data.
+//
+//        DFCM        Uses a 1st order DFCM predictor (Differential Finite Context Method).
+//                    This stores efficiently patterned and cyclic data.
+
+
+
+// WriteVarUInt64()
+//
+//    value                   first byte  bits
+//                            (encoded_bytes)
+// <= 0x0000_0000_0000_007F   0xxx xxxx   7
+// <= 0x0000_0000_0000_3FFF   10xx xxxx   14
+// <= 0x0000_0000_001F_FFFF   110x xxxx   21
+// <= 0x0000_0000_0FFF_FFFF   1110 xxxx   28
+// <= 0x0000_0007_FFFF_FFFF   1111 0xxx   35
+// <= 0x0000_03FF_FFFF_FFFF   1111 10xx   42
+// <= 0x0001_FFFF_FFFF_FFFF   1111 110x   49
+// <= 0x00FF_FFFF_FFFF_FFFF   1111 1110   56
+// <= 0xFFFF_FFFF_FFFF_FFFF   1111 1111   64
+
+
+
+// Due to weird bit shifting behavior of signed integers with negative values, all bit shifting based algorithms work exclusively on unsigned integers
+// Also since negative signed integers such as -1 are stored as 0xFFFFFFFF_FFFFFFFF, leading to poor compression. 
+// Use SignedToUnsigned() for such cases, which makes negative values store their content in the LSB (least significant bytes).
+
+
+
+
+// EXPLANATION OF HASH ALGORITHM
+//
+// IEEE 754 double-precision floating point number representation:
+// double
+// 1000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000
+// ^ sign (1 bit)
+//  ^ exponent (11 bits)
+//                ^ mantissa/fraction (52 bits)
+//
+// float
+// 1000 0000 0000 0000 0000 0000 0000 0000
+// ^ sign (1 bit)
+//  ^ exponent (8 bits)
+//            ^ mantissa/fraction (23 bits)
+//
+// decimal
+// 1000 0000 0000 0000 0000 0000 0000 0000 int[3] - see below ------------\
+// 0000 0000 0000 0000 0000 0000 0000 0000 int[2] >                       |
+// 0000 0000 0000 0000 0000 0000 0000 0000 int[1] > 96 bits integer       |
+// 0000 0000 0000 0000 0000 0000 0000 0000 int[0] >                       v
+// ^ sign (1 bit)                                                       (int[3])
+//  ^ not used must be zero (7 bits)                                    (int[3])
+//           ^ exponent (8 bits) (power of 10 to divide the integer by) (int[3])
+//                     ^ not used must be zero (16 bits)                (int[3])
+// 
+// by using a custom hash algorithm, we try and use this knowledge to optimise 
+// the parts that are likely to be similar from one value to the next in the case of gradually increasing values
+// double: "(m_lastHash << 5) ^ (value >> 50)"
+// float:  "(m_lastHash << 5) ^ (value >> 21)"
+
+
+
+// DataStream_UInt64_LSB (LSB - Least Significant Byte)
+//     Stores efficiently a stream of uint values whose content is stored in LSB (least significant bytes).
+//     Will cut the most significant bytes that are zeroes.
+//     Does automatic RLE on zero values.
+//     Use SignedToUnsigned() for efficient negative values encoding.
+//
+//     Similar to akumuli, but with a better usage of flag byte
+//     
+//     this format is made for ordered/monotonic data that uses the least-important bits first
+//     this format is not suitable for any other case. This means any negative value will force 
+//     a full encoding everytime because of the initial 1 to mark that the value is negative.
+//     
+//     byte    flag
+//     Int64   value1
+//     Int64   value2
+//     
+//     value1/value2 lower n bytes are encoded in flag
+//     
+//     flag format
+//     0x88 = 1000 1000 (binary)
+//            ---- ----
+//            ^         first encoded value
+//                 ^    second encoded value
+//     0x88 = 1000 1000 (binary)
+//            ^
+//            |
+//            [0-8]:      0-8 bytes
+//            [9-15]:     special case, RLE encoding (for zeroes)
+//                        combines with the lower 4 bits for a value range of [ (15 - 9 + 1) * 16 ] = 112 combinations
+//                        1-2 zeroes can be encoded already in one byte (0x0F or 0x00) 
+//                        as a result, there is no point to add support for that range in RLE coding, 
+//                        so RLE range is always 112 combinations [0-111] + 3 = [3-114]
+//     
+//     other special case
+//     
+//     0x?F = ???? 1111
+//                 ^    indicates there is no secondary encoded value
+
+
+
+// DataStream_UInt64
+//     Stores efficiently a stream of uint values.
+//     Will store either the top-most or bottom-most bytes, depending on the side having the most zeroes.
+//     If you know you are storing small values, use the UInt64_LSB encoders instead for a far better compression ratio.
+//     Does automatic RLE on zero values.
+//
+//     Similar to akumuli, but with a better usage of flag byte
+//     
+//     byte    flag
+//     Int64   value1
+//     Int64   value2
+//     
+//     value1/value2 n bytes are encoded in flag
+//     
+//     flag format
+//     0x88 = 1000 1000 (binary)
+//            ---- ----
+//            ^         first encoded value
+//                 ^    second encoded value
+//     0x88 = 1000 1000 (binary)
+//            ^
+//            |
+//            first bit:      0 = trailing bytes (* must be this if remainder bits = 8)
+//                            1 = leading bytes
+//            remainder bits: [1-8] n bytes length
+//     
+//     flag format special values
+//     as noted above, 0xF cannot be generated. This is used to indicate 2 special cases
+//     
+//     0x?F = ???? 1111
+//                 ^    indicates there is no secondary encoded value
+//     0xF0 = 1111 0000
+//            ^         RLE encoding. This indicates that the following 4 bits will instead be used to store the # of repetitive zeroes
+//                 ^    [1-16] Number of repeating zeroes
+
+
+
+// DataStream_UInt32
+//     Stores efficiently a stream of uint values.
+//     Will store either the top-most or bottom-most bytes, depending on the side having the most zeroes.
+//     Does automatic RLE on zero values.
+//
+//     Similar to akumuli, but with a better usage of flag byte
+//     
+//     byte    flag
+//     Int32   value1
+//     Int32   value2
+//     
+//     value1/value2 n bytes are encoded in flag
+//    
+//     flag format
+//     0x11 = 0001 0001 (binary)
+//            ---- ----
+//            ^         first encoded value
+//                 ^    second encoded value
+//     0x11 = 0001 0001 (binary)
+//            ^  ^
+//            |  |
+//            |last bit:  0 = trailing bytes
+//            |           1 = leading bytes
+//            top 3 bits: [0-4]: n bytes length
+//                        [5-7]: special case, RLE encoding (for zeroes)
+//                               combines with the [lower 5 bits] for a value range of [ (7 - 5 + 1) * 32 ] = 96 combinations
+//                               1-2 zeroes can be encoded already in one byte (0x0F or 0x00) 
+//                               as a result, there is no point to add support for that range in RLE coding, 
+//                               so RLE range is always 96 combinations [0-95] + 3 = [3-98]
+//     ex: 3-consecutive zeroes RLE:  1010 0000
+//     ex: 4-consecutive zeroes RLE:  1010 0010
+//     ex: 98-consecutive zeroes RLE: 1111 1111
+//    
+//     other special case
+//    
+//     0x?F = ???? 1111
+//                 ^    indicates there is no secondary encoded value
