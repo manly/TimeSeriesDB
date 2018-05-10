@@ -507,7 +507,7 @@ namespace TimeSeriesDB.IO
                 m_offset++;
 
             int day = unchecked((int)Fast_AtoI_UInt32(m_buffer, m_offset, 2));
-            m_offset += 3;
+            m_offset += 2;
 
             var time = this.InternalGetTimeSpan(false);
             return new DateTime(new DateTime(year, month, day).Ticks + time.Ticks, DateTimeKind.Utc);
@@ -518,12 +518,19 @@ namespace TimeSeriesDB.IO
             // constant format
             // 00:00:00, 3.17:25:30.5000000
 
+            var b = m_buffer[m_offset];
+            if(b == ' ' || b == 'T') // in case of 9999-12-20T00:00:00"
+                b = m_buffer[++m_offset];
+
             bool is_negative = false;
 
-            if(m_buffer[m_offset] == '-') {
+            if(b == '-') {
                 is_negative = true;
-                m_offset++;
+                b = m_buffer[++m_offset];
             }
+
+            if(b > '9' || b < '0')
+                return TimeSpan.Zero;
 
             int day = 0;
             if(readDays) {
@@ -535,7 +542,7 @@ namespace TimeSeriesDB.IO
             int hour = unchecked((int)Fast_AtoI_UInt32(m_buffer, m_offset, 2));
             m_offset += 2;
 
-            var b = m_buffer[m_offset];
+            b = m_buffer[m_offset];
             if(b == ':')
                 m_offset++;
 
