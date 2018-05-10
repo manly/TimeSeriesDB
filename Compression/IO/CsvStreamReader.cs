@@ -6,1091 +6,9 @@ using System.Runtime.CompilerServices;
 using static System.Runtime.CompilerServices.MethodImplOptions;
 using System.Diagnostics;
 
-#region OBSOLETED CODE
-/*
-        // the code below used to work by instead requesting column by column the data and then request SkipLine()
-        // this was just weird to use rather than copy the IDataReader pattern, but was faster for some operation as there was no guesswork to determine columns
-
-        #region GetBool()
-        public bool? GetBool() {
-            if(!this.SkipToData_Small())
-                return null; // throw new FormatException();
-
-            var b = m_buffer[m_offset++];
-            var res = b == 't' || b == 'T';
-
-            this.SkipColumns(1);
-            return res;
-        }
-        #endregion
-        #region GetUInt8()
-        public byte? GetUInt8() {
-            if(!this.SkipToData_Small())
-                return null; // throw new FormatException();
-
-            int len = this.DetermineDataLengthWithinBuffer();
-            var res = BitMethods.Fast_AtoI_UInt8(m_buffer, m_offset, len);
-            m_offset += len;
-
-            this.SkipColumns(1);
-            return res;
-        }
-        #endregion
-        #region GetUInt16()
-        public ushort? GetUInt16() {
-            if(!this.SkipToData_Small())
-                return null; // throw new FormatException();
-
-            int len = this.DetermineDataLengthWithinBuffer();
-            var res = BitMethods.Fast_AtoI_UInt16(m_buffer, m_offset, len);
-            m_offset += len;
-
-            this.SkipColumns(1);
-            return res;
-        }
-        #endregion
-        #region GetUInt32()
-        public uint? GetUInt32() {
-            if(!this.SkipToData_Small())
-                return null; // throw new FormatException();
-
-            int len = this.DetermineDataLengthWithinBuffer();
-            var res = BitMethods.Fast_AtoI_UInt32(m_buffer, m_offset, len);
-            m_offset += len;
-
-            this.SkipColumns(1);
-            return res;
-        }
-        #endregion
-        #region GetUInt64()
-        public ulong? GetUInt64() {
-            if(!this.SkipToData_Small())
-                return null; // throw new FormatException();
-
-            int len = this.DetermineDataLengthWithinBuffer();
-            var res = BitMethods.Fast_AtoI_UInt64(m_buffer, m_offset, len);
-            m_offset += len;
-
-            this.SkipColumns(1);
-            return res;
-        }
-        #endregion
-        #region GetInt8()
-        public sbyte? GetInt8() {
-            if(!this.SkipToData_Small())
-                return null; // throw new FormatException();
-
-            int len = this.DetermineDataLengthWithinBuffer();
-            var res = BitMethods.Fast_AtoI_Int8(m_buffer, m_offset, len);
-            m_offset += len;
-
-            this.SkipColumns(1);
-            return res;
-        }
-        #endregion
-        #region GetInt16()
-        public short? GetInt16() {
-            if(!this.SkipToData_Small())
-                return null; // throw new FormatException();
-
-            int len = this.DetermineDataLengthWithinBuffer();
-            var res = BitMethods.Fast_AtoI_Int16(m_buffer, m_offset, len);
-            m_offset += len;
-
-            this.SkipColumns(1);
-            return res;
-        }
-        #endregion
-        #region GetInt32()
-        public int? GetInt32() {
-            if(!this.SkipToData_Small())
-                return null; // throw new FormatException();
-
-            int len = this.DetermineDataLengthWithinBuffer();
-            var res = BitMethods.Fast_AtoI_Int32(m_buffer, m_offset, len);
-            m_offset += len;
-
-            this.SkipColumns(1);
-            return res;
-        }
-        #endregion
-        #region GetInt64()
-        public long? GetInt64() {
-            if(!this.SkipToData_Small())
-                return null; // throw new FormatException();
-
-            int len = this.DetermineDataLengthWithinBuffer();
-            var res = BitMethods.Fast_AtoI_Int64(m_buffer, m_offset, len);
-            m_offset += len;
-
-            this.SkipColumns(1);
-            return res;
-        }
-        #endregion
-        #region GetDateTime()
-        public DateTime? GetDateTime() {
-            // sortable format
-            // 2008-04-10 06:30:00.1234567
-
-            if(!this.SkipToData_Small())
-                return null; // throw new FormatException();
-
-            var res = this.InternalGetDateTime();
-
-            this.SkipColumns(1);
-            return res;
-        }
-        #endregion
-        #region GetTimeSpan()
-        public TimeSpan? GetTimeSpan() {
-            // constant format
-            // 00:00:00, 3.17:25:30.5000000
-
-            if(!this.SkipToData_Small())
-                return null; // throw new FormatException();
-
-            var res = this.InternalGetTimeSpan(true);
-
-            this.SkipColumns(1);
-            return res;
-        }
-        #endregion
-        #region GetDecimal()
-        public decimal? GetDecimal() {
-            if(!this.SkipToData_Small())
-                return null; // throw new FormatException();
-
-            int len = this.DetermineDataLengthWithinBuffer();
-
-            for(int i = 0; i < len; i++)
-                m_charBuffer[i] = unchecked((char)m_buffer[m_offset + i]);
-            m_offset += len;
-
-            var res = decimal.Parse(
-                new string(m_charBuffer, 0, len), 
-                NumberStyles.AllowDecimalPoint | NumberStyles.AllowCurrencySymbol | NumberStyles.AllowLeadingSign | NumberStyles.AllowThousands, 
-                FORMAT);
-
-            this.SkipColumns(1);
-            return res;
-        }
-        #endregion
-        #region GetDouble()
-        public double? GetDouble() {
-            if(!this.SkipToData_Small())
-                return null; // throw new FormatException();
-
-            int len = this.DetermineDataLengthWithinBuffer();
-
-            for(int i = 0; i < len; i++)
-                m_charBuffer[i] = unchecked((char)m_buffer[m_offset + i]);
-            m_offset += len;
-
-            var res = double.Parse(
-                new string(m_charBuffer, 0, len),
-                NumberStyles.AllowDecimalPoint | NumberStyles.AllowCurrencySymbol | NumberStyles.AllowLeadingSign | NumberStyles.AllowThousands,
-                FORMAT);
-
-            this.SkipColumns(1);
-            return res;
-        }
-        #endregion
-        #region GetFloat()
-        public float? GetFloat() {
-            if(!this.SkipToData_Small())
-                return null; // throw new FormatException();
-
-            int len = this.DetermineDataLengthWithinBuffer();
-
-            for(int i = 0; i < len; i++)
-                m_charBuffer[i] = unchecked((char)m_buffer[m_offset + i]);
-            m_offset += len;
-
-            var res = float.Parse(
-                new string(m_charBuffer, 0, len),
-                NumberStyles.AllowDecimalPoint | NumberStyles.AllowCurrencySymbol | NumberStyles.AllowLeadingSign | NumberStyles.AllowThousands,
-                FORMAT);
-
-            this.SkipColumns(1);
-            return res;
-        }
-        #endregion
-        #region GetByteArray()
-        public byte[] GetByteArray() {
-            this.GetHex(out byte[] array, out DynamicMemoryStream ms);
-                
-            return array ?? ms?.ToArray();
-        }
-        #endregion
-        #region GetStream()
-        public DynamicMemoryStream GetStream() {
-            this.GetHex(out byte[] array, out DynamicMemoryStream ms);
-
-            return ms ?? (array == null ? null : new DynamicMemoryStream(array, 0, array.Length));
-        }
-        #endregion
-        #region GetString()
-        /// <summary>
-        ///     Reads the string in this column.
-        ///     The string is required to have '"' around, and will throw if not (even on null string).
-        /// </summary>
-        public string GetString() {
-            if(!this.SkipToData_Variable())
-                return null;
-
-            var res = this.InternalGetString();
-
-            this.SkipColumns(1);
-            return res;
-        }
-        #endregion
-
-        #region GetAsString()
-        /// <summary>
-        ///     Reads the column and returns it as a string.
-        ///     If the column was a string, then it will behave the same as ReadString().
-        ///     This will trim any non-string-encoded data (with " around).
-        /// </summary>
-        public string GetAsString() {
-            if(!this.SkipToData_Variable())
-                return null;
-
-            var res = this.InternalGetAsString();
-
-            this.SkipColumns(1);
-            return res;
-        }
-        #endregion
-
-        #region GetValue()
-        /// <summary>
-        ///     Generically read the column.
-        /// </summary>
-        public CsvValue GetValue() {
-            if(!this.SkipToData_Small())
-                return default; // throw new FormatException();
-
-            var res = this.InternalGetValue();
-
-            this.SkipColumns(1);
-            //return res;
-            return default;
-        }
-        #endregion
-        #region GetValues()
-        /// <summary>
-        ///     Reads the line/row.
-        ///     Returns the number of read items.
-        /// </summary>
-        public int GetValues(object[] values) {
-            int count = 0;
-
-            do {
-                object current = null;
-                if(this.SkipToData_Variable())
-                    current = this.InternalGetValue().Value;
-
-                values[count++] = current;
-            } while(this.SkipColumns(1));
-
-            return count;
-        }
-        #endregion
-        #region GetValuesAsString()
-        /// <summary>
-        ///     Reads the line/row as string[].
-        ///     Returns the number of read items.
-        /// </summary>
-        public int GetValuesAsString(string[] values) {
-            int count = 0;
-
-            do {
-                string current = null;
-                if(this.SkipToData_Variable())
-                    current = this.InternalGetAsString();
-
-                values[count++] = current;
-            } while(this.SkipColumns(1));
-
-            return count;
-        }
-        #endregion
-
-        #region SkipColumns()
-        /// <summary>
-        ///     Skips the current column, to position the cursor right after the ',' or on '\n'.
-        ///     Returns true if found a following column, false if end of line.
-        /// </summary>
-        [MethodImpl(AggressiveInlining)]
-        public bool SkipColumns(int count) {
-            //Debug.Assert(count > 0);
-
-            while(true) {
-                while(m_offset < m_read) {
-                    var b = m_buffer[m_offset];
-
-                    if(b == '\n')
-                        return false;
-
-                    m_offset++;
-
-                    if(b == ',') {
-                        if(--count <= 0)
-                            return true;
-                    }
-                    if(b == '"')
-                        this.SkipString();
-                }
-
-                m_offset = 0;
-                if((m_read = m_stream.Read(m_buffer, 0, MAX_BUFFER_SIZE)) == 0)
-                    return false;
-            }
-        }
-        #endregion
-        #region SkipLine()
-        /// <summary>
-        ///     Skips the current line until the character after the '\n'.
-        ///     This will properly skip strings.
-        ///     Returns true if there is a next line, false if end of stream.
-        /// </summary>
-        [MethodImpl(AggressiveInlining)]
-        public bool SkipLine() {
-            this.SkipColumns(int.MaxValue);
-
-            if(m_read == 0)
-                return false;
-
-            // due to the way skipcolumn() is coded, if we make it here that means we have a '\n' on the current cursor
-
-            // skip '\n'
-            m_offset++;
-            return true;
-        }
-        #endregion
-
-        #region private SkipString()
-        /// <summary>
-        ///     Must be right after the initial '"'.
-        ///     This will position itself after the ending '"'.
-        ///     ie: assumes you're currently at the beginning of the string data.
-        /// </summary>
-        [MethodImpl(AggressiveInlining)]
-        private void SkipString() {
-            while(true) {
-                while(m_offset < m_read) {
-                    var b = m_buffer[m_offset++];
-
-                    if(b == '"') {
-                        // pre-fetch next byte
-                        if(m_offset == m_read) {
-                            this.RefreshBuffer();
-                            // if we reach end of stream and finished with ", that means we have a normal string end at the end of the stream
-                            if(m_read == 0)
-                                return;
-                        }
-
-                        // not two consecutive " (meaning: this was the end of the string)
-                        if(m_buffer[m_offset] != '"')
-                            return;
-                        
-                        // two consecutive ", keep searching for end of string
-                        m_offset++;
-                    }
-                }
-
-                this.RefreshBuffer();
-                if(m_read == 0)
-                    return;
-            }
-        }
-        #endregion
-        #region private SkipToData_Small()
-        /// <summary>
-        ///     Skips to the beginning of the data within the column.
-        ///     Returns true if some data was found in the current column, false if the column contained no data (ex: ',,').
-        ///     Also this method will purposefully make sure you have ~BUFFER_SIZE of consecutive data readable afterwards without needing to check buffers (unless the column begins with thousands of spaces which breaks this).
-        ///     This will position the cursor to the following ',', '\n' or '\r' if no data was found.
-        /// </summary>
-        [MethodImpl(AggressiveInlining)]
-        private bool SkipToData_Small() {
-            if(m_offset >= BUFFER_SIZE || m_offset >= m_read)
-                this.RefreshBuffer();
-
-            // search only within buffer, do not extend past it
-            while(m_offset < m_read) {
-                var b = m_buffer[m_offset];
-
-                // char.IsWhiteSpace() very slow as it checks a lot of cases that dont apply to CSV
-                if(b != ' ' && b != '\t')
-                    return b != ',' && b != '\n' && b != '\r';
-
-                m_offset++;
-            }
-
-            // if there are more than BUFFER_SIZE whitespaces (unlikely)
-            // or if we reached end of stream
-            throw new EndOfStreamException(); //throw new FormatException();
-        }
-        #endregion
-        #region private SkipToData_Variable()
-        /// <summary>
-        ///     Skips to the beginning of the data within the column.
-        ///     Returns true if some data was found in the current column, false if the column contained no data (ex: ',,').
-        ///     This method will not attempt to make sure there is left-over data after finding the start of the data.
-        ///     This is meant for big variable-sized items that dont fit in ~BUFFER_SIZE.
-        ///     This will position the cursor to the following ',', '\n' or '\r' if no data was found.
-        /// </summary>
-        [MethodImpl(AggressiveInlining)]
-        private bool SkipToData_Variable() {
-            while(true) {
-                while(m_offset < m_read) {
-                    var b = m_buffer[m_offset];
-
-                    // char.IsWhiteSpace() very slow as it checks a lot of cases that dont apply to CSV
-                    if(b != ' ' && b != '\t')
-                        return b != ',' && b != '\n' && b != '\r';
-
-                    m_offset++;
-                }
-
-                m_offset = 0;
-                if((m_read = m_stream.Read(m_buffer, 0, MAX_BUFFER_SIZE)) == 0)
-                    throw new EndOfStreamException();
-            }
-        }
-        #endregion
-
-        #region private RefreshBuffer()
-        /// <summary>
-        ///     Refreshes the buffer and downshifts the remaining (unread) data.
-        /// </summary>
-        [MethodImpl(AggressiveInlining)]
-        private void RefreshBuffer() {
-            int remaining = m_read - m_offset;
-
-            // downshift remainder data
-            if(remaining > 0)
-                Buffer.BlockCopy(m_buffer, m_offset, m_buffer, 0, remaining);
-
-            m_read = remaining + m_stream.Read(m_buffer, remaining, MAX_BUFFER_SIZE - remaining);
-            m_offset = 0;
-        }
-        #endregion
-        #region private DetermineDataLengthWithinBuffer()
-        /// <summary>
-        ///     Starting from current position within buffer, searches for the first ',', '\n' or '\r'.
-        ///     The ending whitespaces of the data will be trimmed.
-        /// </summary>
-        [MethodImpl(AggressiveInlining)]
-        private int DetermineDataLengthWithinBuffer() {
-            int start = m_offset;
-            int lastNonWhitespace = start;
-
-            while(start < m_read) {
-                var b = m_buffer[start++];
-
-                if(b == ',' || b == '\n' || b == '\r')
-                    break;
-                // char.IsWhiteSpace() very slow as it checks a lot of cases that dont apply to CSV
-                if(b != ' ' && b != '\t')
-                    lastNonWhitespace = start;
-            }
-            // end not found within buffer
-            return lastNonWhitespace - m_offset; //return -1;
-        }
-        #endregion
-        #region private TryDetermineDataLengthWithinBuffer()
-        /// <summary>
-        ///     Starting from current position within buffer, searches for the first ',', '\n' or '\r'.
-        ///     The ending whitespaces of the data will be trimmed.
-        ///     If the end of column or end of line is not found, returns -1.
-        /// </summary>
-        [MethodImpl(AggressiveInlining)]
-        private int TryDetermineDataLengthWithinBuffer() {
-            int start = m_offset;
-            int lastNonWhitespace = start;
-
-            while(start < m_read) {
-                var b = m_buffer[start++];
-
-                if(b == ',' || b == '\n' || b == '\r')
-                    return lastNonWhitespace - m_offset;
-                // char.IsWhiteSpace() very slow as it checks a lot of cases that dont apply to CSV
-                if(b != ' ' && b != '\t')
-                    lastNonWhitespace = start;
-            }
-            // end not found within buffer
-            return -1;
-        }
-        #endregion
-
-        #region private GetHex()
-        /// <summary>
-        ///     Returns either byte[] or Stream.
-        /// </summary>
-        private void GetHex(out byte[] array, out DynamicMemoryStream ms) {
-            if(!this.SkipToData_Variable()) {
-                array = null;
-                ms = null;
-                return; // throw new FormatException();
-            }
-
-            // todo: add support for 'null' and ',,'
-
-            var b = m_buffer[m_offset];
-            if(b != '"') {
-                array = null;
-                ms = null;
-                return; // throw new FormatException();
-            }
-
-            // position inside the string
-            m_offset++;
-
-            // gambit: scan the current buffer to try to find the end of the string, if found, then we can allocate properly
-            for(int i = m_offset; i < m_read; i++) {
-                if(m_buffer[i] != '"')
-                    continue;
-
-                // if end of string is found
-                if((i - m_offset) % 2 != 0)
-                    throw new FormatException("Hexadecimal encoding length must be a multiple of 2.");
-
-                var res = this.HexDecodeBuffer(i - m_offset);
-
-                // skip ending '"'
-                m_offset++;
-
-                this.SkipColumns(1);
-
-                array = res;
-                ms = null;
-                return;
-            }
-
-            // gambit failed, means the string spans over multiple buffer, and thus we can't really predict it's final size
-            // as such, we use an increase-efficient stream
-            array = null;
-            ms = new DynamicMemoryStream((m_read - m_offset) / 2);
-
-            const int WRITE_BUFFER_SIZE = 4096;
-            int writeIndex = 0;
-            var writeBuffer = new byte[WRITE_BUFFER_SIZE];
-
-            bool first_item = true;
-            int prev_item = 0;
-
-            while(true) {
-                while(m_offset < m_read) {
-                    b = m_buffer[m_offset++];
-
-                    int item;
-
-                    if(b <= '9' && b >= '0')
-                        item = b - '0';
-                    else if(b <= 'F' && b >= 'A')
-                        item = b - 'A' + 10;
-                    else if(b <= 'f' && b >= 'a')
-                        item = b - 'a' + 10;
-                    else if(b == '"') {
-                        // end of stream
-                        if(!first_item)
-                            throw new FormatException();
-
-                        if(writeIndex > 0)
-                            ms.Write(writeBuffer, 0, writeIndex);
-
-                        this.SkipColumns(1);
-                        return;
-                    } else
-                        throw new FormatException();
-
-                    // process item
-                    first_item = !first_item;
-                    if(first_item) {
-                        writeBuffer[writeIndex++] = unchecked((byte)((prev_item << 4) | item));
-                        if(writeIndex == WRITE_BUFFER_SIZE) {
-                            writeIndex = 0;
-                            ms.Write(writeBuffer, 0, WRITE_BUFFER_SIZE);
-                        }
-                    } else
-                        prev_item = item;
-                }
-
-                this.RefreshBuffer();
-                if(m_read == 0)
-                    throw new EndOfStreamException();
-            }
-        }
-        #endregion
-        #region private HexDecodeBuffer()
-        private byte[] HexDecodeBuffer(int count) {
-            var res = new byte[count / 2];
-            int writeIndex = 0;
-
-            while(count > 0) {
-                int hex1;
-                int hex2;
-
-                byte b = m_buffer[m_offset++];
-                if(b <= '9' && b >= '0')
-                    hex1 = b - '0';
-                else if(b <= 'F' && b >= 'A')
-                    hex1 = b - 'A' + 10;
-                else if(b <= 'f' && b >= 'a')
-                    hex1 = b - 'a' + 10;
-                else
-                    throw new FormatException();
-
-                b = m_buffer[m_offset++];
-                if(b <= '9' && b >= '0')
-                    hex2 = b - '0';
-                else if(b <= 'F' && b >= 'A')
-                    hex2 = b - 'A' + 10;
-                else if(b <= 'f' && b >= 'a')
-                    hex2 = b - 'a' + 10;
-                else
-                    throw new FormatException();
-
-                res[writeIndex++] = unchecked((byte)((hex1 << 4) | hex2));
-                count -= 2;
-            }
-
-            return res;
-        }
-        #endregion
-        #region private CountDigits()
-        [MethodImpl(AggressiveInlining)]
-        private int CountDigits() {
-            int digits = 0;
-            int offset = m_offset;
-
-            while(offset < m_read) {
-                var b = m_buffer[offset++];
-                if(b <= '9' && b >= '0')
-                    digits++;
-                else
-                    break;
-            }
-            return digits;
-        }
-        #endregion
-        #region private InternalGetDateTime()
-        private DateTime InternalGetDateTime() {
-            // sortable format
-            // 2008-04-10 06:30:00.1234567
-
-            int year = unchecked((int)BitMethods.Fast_AtoI_UInt32(m_buffer, m_offset, 4));
-            m_offset += 4;
-
-            var b = m_buffer[m_offset];
-            if(b == '-' || b == '/')
-                m_offset++;
-
-            int month = unchecked((int)BitMethods.Fast_AtoI_UInt32(m_buffer, m_offset, 2));
-            m_offset += 2;
-
-            b = m_buffer[m_offset];
-            if(b == '-' || b == '/')
-                m_offset++;
-
-            int day = unchecked((int)BitMethods.Fast_AtoI_UInt32(m_buffer, m_offset, 2));
-            m_offset += 3;
-
-            var time = this.InternalGetTimeSpan(false);
-            return new DateTime(new DateTime(year, month, day).Ticks + time.Ticks, DateTimeKind.Utc);
-        }
-        #endregion
-        #region private InternalGetTimeSpan()
-        private TimeSpan InternalGetTimeSpan(bool readDays) {
-            // constant format
-            // 00:00:00, 3.17:25:30.5000000
-
-            bool is_negative = false;
-
-            if(m_buffer[m_offset] == '-') {
-                is_negative = true;
-                m_offset++;
-            }
-
-            int day = 0;
-            if(readDays) {
-                var digits = this.CountDigits();
-                if(m_buffer[m_offset + digits] == '.')
-                    day = unchecked((int)BitMethods.Fast_AtoI_UInt32(m_buffer, m_offset, digits));
-            }
-
-            int hour = unchecked((int)BitMethods.Fast_AtoI_UInt32(m_buffer, m_offset, 2));
-            m_offset += 2;
-
-            var b = m_buffer[m_offset];
-            if(b == ':')
-                m_offset++;
-
-            int minute = unchecked((int)BitMethods.Fast_AtoI_UInt32(m_buffer, m_offset, 2));
-            m_offset += 2;
-
-            b = m_buffer[m_offset];
-            if(b == ':')
-                m_offset++;
-
-            long millisecond = 0;
-            int second = unchecked((int)BitMethods.Fast_AtoI_UInt32(m_buffer, m_offset, 2));
-            m_offset += 2;
-
-            b = m_buffer[m_offset];
-            if(b == '.') {
-                m_offset++;
-
-                int digits = Math.Min(this.CountDigits(), 7);
-
-                millisecond = unchecked((int)BitMethods.Fast_AtoI_UInt32(m_buffer, m_offset, digits));
-                m_offset += digits;
-
-                switch(digits) {
-                    case 3: millisecond = (millisecond * 1)   * TimeSpan.TicksPerMillisecond; break;
-                    case 2: millisecond = (millisecond * 10)  * TimeSpan.TicksPerMillisecond; break;
-                    case 1: millisecond = (millisecond * 100) * TimeSpan.TicksPerMillisecond; break;
-                        
-                    //case 7: millisecond *= 1; break;
-                    case 6: millisecond *= 10;   break;
-                    case 5: millisecond *= 100;  break;
-                    case 4: millisecond *= 1000; break;
-                }
-            }
-            
-            long ticks =
-                day    * TimeSpan.TicksPerDay +
-                hour   * TimeSpan.TicksPerHour +
-                minute * TimeSpan.TicksPerMinute +
-                second * TimeSpan.TicksPerSecond +
-                millisecond;
-
-            if(is_negative)
-                ticks = -ticks;
-
-            return new TimeSpan(ticks);
-        }
-        #endregion
-        #region private InternalGetString()
-        /// <summary>
-        ///     Reads the string in this column.
-        ///     The string is required to have '"' around, and will throw if not (even on null string).
-        /// </summary>
-        private string InternalGetString() {
-            // todo: add support for 'null' and ',,'
-
-            var b = m_buffer[m_offset];
-            if(b != '"')
-                throw new FormatException();
-
-            // position inside the string
-            m_offset++;
-            StringBuilder sb = null; // create only if needed
-            int start = m_offset;
-            int size;
-
-            while(true) {
-                while(m_offset < m_read) {
-                    b = m_buffer[m_offset++];
-
-                    if(b == '"') {
-                        // pre-fetch next byte
-                        if(m_offset == m_read) {
-                            // append remainder of block directly into result
-                            size = m_offset - start - 1;
-                            if(size > 0) {
-                                int readChars = m_decoder.GetChars(m_buffer, start, size, m_charBuffer, 0);
-                                if(sb == null)
-                                    sb = new StringBuilder(readChars);
-                                sb.Append(m_charBuffer, 0, readChars);
-                            }
-                            start = 0;
-
-                            this.RefreshBuffer();
-                            // if we reach end of stream and finished with ", that means we have a normal string end at the end of the stream
-                            if(m_read == 0)
-                                return sb?.ToString() ?? string.Empty;
-                        }
-
-                        // not two consecutive " (meaning: this was the end of the string)
-                        if(m_buffer[m_offset] != '"') {
-                            // append up to "
-                            size = m_offset - start - 1;
-                            if(size > 0) {
-                                int readChars = m_decoder.GetChars(m_buffer, start, size, m_charBuffer, 0);
-                                if(sb == null)
-                                    return new string(m_charBuffer, 0, readChars);
-                                else {
-                                    sb.Append(m_charBuffer, 0, readChars);
-                                    return sb.ToString();
-                                }
-                            } else
-                                return sb?.ToString() ?? string.Empty;
-                        }
-
-                        // two consecutive ", keep searching for end of string
-                        m_offset++;
-
-                        // append everything up to first "
-                        size = m_offset - start - 1;
-                        if(size > 0) {
-                            int readChars = m_decoder.GetChars(m_buffer, start, size, m_charBuffer, 0);
-                            if(sb == null)
-                                sb = new StringBuilder(readChars);
-                            sb.Append(m_charBuffer, 0, readChars);
-                        }
-                        start = m_offset;
-                    }
-                }
-
-                // append remainder of block directly into result
-                size = m_offset - start;
-                if(size > 0) {
-                    int readChars = m_decoder.GetChars(m_buffer, start, size, m_charBuffer, 0);
-                    if(sb == null)
-                        sb = new StringBuilder(readChars);
-                    sb.Append(m_charBuffer, 0, readChars);
-                }
-                start = 0;
-
-                this.RefreshBuffer();
-                if(m_read == 0)
-                    throw new EndOfStreamException(); // FormatException(); ? since non-terminated string
-            }
-        }
-        #endregion
-        #region private InternalGetAsString()
-        /// <summary>
-        ///     Reads the column and returns it as a string.
-        ///     If the column was a string, then it will behave the same as ReadString().
-        ///     This will trim any non-string-encoded data (with " around).
-        /// </summary>
-        private string InternalGetAsString() {
-            // if we're already on a string, then read as normal
-            if(m_buffer[m_offset] == '"')
-                return this.InternalGetString();
-
-            // gambit: attempt to find end of column/line in buffer
-            int len = this.TryDetermineDataLengthWithinBuffer();
-
-            if(len > 0) {
-                var temp = new char[len];
-                Array.Copy(m_buffer, m_offset, temp, 0, len);
-                m_offset += len;
-                return new string(temp, 0, len);
-            } else if(len == 0) // ',,'
-                return null;
-            else {
-                // gambit failed; the data is split across multiple buffers
-                len = m_read - m_offset;
-                var sb = new StringBuilder(len);
-                var temp = new char[MAX_BUFFER_SIZE];
-                // no encoding
-                Array.Copy(m_buffer, m_offset, temp, 0, len);
-                sb.Append(temp, 0, len);
-                m_offset += len;
-
-                while(true) {
-                    if(m_offset < m_read) {
-                        len = this.TryDetermineDataLengthWithinBuffer();
-
-                        if(len > 0) {
-                            // no encoding
-                            Array.Copy(m_buffer, m_offset, temp, 0, len);
-                            sb.Append(temp, 0, len);
-                            m_offset += len;
-                            break;
-                        } else if(len == 0) {
-                            // found ',' or '\n' right at first byte of new buffer
-                            break;
-                        } else {
-                            // this should be an error in 100% of normal cases because it means data is > MAX_BUFFER_SIZE and not stored as string
-                            // but since we are not interpreting the data in this method, we keep on going
-
-                            // no encoding
-                            len = m_read - m_offset;
-                            Array.Copy(m_buffer, m_offset, temp, 0, m_read);
-                            sb.Append(temp, 0, len);
-                            m_offset += len;
-                        }
-                    }
-
-                    m_offset = 0;
-                    if((m_read = m_stream.Read(m_buffer, 0, MAX_BUFFER_SIZE)) == 0)
-                        break; //throw new EndOfStreamException();
-                }
-                return sb.ToString();
-            }
-        }
-        #endregion
-        #region private InternalGetValue()
-        private CsvValue InternalGetValue() {
-            var b = m_buffer[m_offset];
-
-            // if we're on a string/variable-length object
-            if(b == '"')
-                return new CsvValue(this.InternalGetString(), CsvValue.DataKind.String);
-
-            // then in every other case, we have to make sure we can read consecutively the entire data
-            if(m_offset >= BUFFER_SIZE)
-                this.RefreshBuffer();
-
-            // special values:
-            // <nothing>, null, true, false, NaN, Inf, -Inf, -<timestamp>, "..."
-            // since the caller is assumed to have called SkipToData(), there is no need to check for <nothing>
-
-            m_offset++;
-
-            // check for 'null', 'NaN'
-            if(b == 'n' || b == 'N') {
-                b = m_buffer[m_offset++];
-                if(b == 'u' || b == 'U')
-                    return new CsvValue(null, CsvValue.DataKind.Null);
-                if(b == 'a' || b == 'A')
-                    return new CsvValue(double.NaN, CsvValue.DataKind.Double);
-
-                // todo: encode as raw string ?
-                // would be kind of evil since I don't fully parse the values to make sure they are 'null', yet can assume non-quoted strings are possible?
-                throw new FormatException();
-            }
-            // check for 'true'
-            if(b == 't' || b == 'T')
-                return new CsvValue(1, CsvValue.DataKind.Int32);
-            // check for 'false'
-            if(b == 'f' || b == 'F')
-                return new CsvValue(0, CsvValue.DataKind.Int32);
-            // check for 'Inf'
-            if(b == 'i' || b == 'I')
-                return new CsvValue(double.PositiveInfinity, CsvValue.DataKind.Double);
-            // check for '-Inf'
-            if(b == '-') {
-                var temp = m_buffer[m_offset];
-                if(temp == 'i' || temp == 'I') {
-                    m_offset++;
-                    return new CsvValue(double.NegativeInfinity, CsvValue.DataKind.Double);
-                }
-            }
-
-            // Determine...() or TryDetermine...() are somewhat interchangeable here
-            int len = this.TryDetermineDataLengthWithinBuffer();
-            if(len < 0)
-                throw new FormatException();
-
-            // count the number of '-', '/', ':', '.'
-            // and only [0-9 ,./-] are valid
-
-            len++;
-            m_offset--;
-            
-            int dash_count = 0;
-            int slash_count = 0;
-            int dot_index = -1;
-            int doubledot_count = 0;
-            bool contains_exponent = false;
-
-            for(int i = 0; i < len; i++) {
-                b = m_buffer[m_offset + i];
-
-                if(b <= '9' && b >= '0')
-                    continue;
-                else if(b == '.')
-                    dot_index = i;
-                else if(b == '-')
-                    dash_count++;
-                else if(b == '/')
-                    slash_count++;
-                else if(b == ':')
-                    doubledot_count++;
-                else if(b == 'E' || b == 'e')
-                    contains_exponent = true;
-                else if(b == ' ' || b == '+')
-                    continue;
-                else
-                    throw new FormatException();
-            }
-
-            if(dash_count > 1 || slash_count > 0)
-                return new CsvValue(this.InternalGetDateTime(), CsvValue.DataKind.DateTime);
-            if(doubledot_count > 0)
-                return new CsvValue(this.InternalGetTimeSpan(dot_index >= 0), CsvValue.DataKind.TimeSpan);
-
-            return this.InternalGetNumber(len, dot_index, contains_exponent);
-        }
-        #endregion
-        #region private InternalGetNumber()
-        private CsvValue InternalGetNumber(int len, int dot_index, bool contains_exponent) {
-            if(contains_exponent) {
-                // floating point data
-                for(int i = 0; i < len; i++)
-                    m_charBuffer[i] = unchecked((char)m_buffer[m_offset + i]);
-                m_offset += len;
-
-                var res = double.Parse(
-                    new string(m_charBuffer, 0, len),
-                    NumberStyles.AllowCurrencySymbol | NumberStyles.AllowLeadingSign | NumberStyles.AllowExponent, // | NumberStyles.AllowDecimalPoint
-                    FORMAT);
-                return new CsvValue(res, CsvValue.DataKind.Decimal);
-            } else if(dot_index < 0) {
-                if(len <= 9) {
-                    var res = BitMethods.Fast_AtoI_Int32(m_buffer, m_offset, len);
-                    m_offset += len;
-                    return new CsvValue(res, CsvValue.DataKind.Int32);
-                } else if(len <= 19) {
-                    var res = BitMethods.Fast_AtoI_Int64(m_buffer, m_offset, len);
-                    m_offset += len;
-                    if(res <= int.MaxValue && res >= int.MinValue)
-                        return new CsvValue(unchecked((int)res), CsvValue.DataKind.Int32);
-                    else
-                        return new CsvValue(res, CsvValue.DataKind.Int64);
-                } else {
-                    for(int i = 0; i < len; i++)
-                        m_charBuffer[i] = unchecked((char)m_buffer[m_offset + i]);
-                    m_offset += len;
-
-                    // since this has no floating points, the highest number available in .net is a decimal
-                    var res = decimal.Parse(
-                        new string(m_charBuffer, 0, len),
-                        NumberStyles.AllowCurrencySymbol | NumberStyles.AllowLeadingSign,
-                        FORMAT);
-
-                    if(res <= long.MaxValue && res >= long.MinValue)
-                        return new CsvValue(unchecked((long)res), CsvValue.DataKind.Int64);
-                    else if(res <= ulong.MaxValue && res >= ulong.MinValue)
-                        return new CsvValue(unchecked((ulong)res), CsvValue.DataKind.UInt64);
-                    else
-                        return new CsvValue(res, CsvValue.DataKind.Decimal);
-                }
-            } else {
-                // floating point data
-                for(int i = 0; i < len; i++)
-                    m_charBuffer[i] = unchecked((char)m_buffer[m_offset + i]);
-                m_offset += len;
-
-                //int magnitude = dot_index;
-                //int precision = len - dot_index - 1;
-                // call proper decimal/double parse depending on magnitude/precision
-
-                // todo: better determine decimal/double parse because double supports a bigger range 
-                // but you want to call decimal parse to avoid rounding loss
-                
-                var res = decimal.Parse(
-                    new string(m_charBuffer, 0, len),
-                    NumberStyles.AllowCurrencySymbol | NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
-                    FORMAT);
-                return new CsvValue(res, CsvValue.DataKind.Decimal);
-            }
-        }
-        #endregion
-*/
-#endregion
-
 
 namespace TimeSeriesDB.IO
 {
-    using Internal;
-
     /// <summary>
     ///     Efficient CSV file reader.
     ///     This is significantly faster than StreamReader/StringReader because no convertion takes place and all reads are hand-coded for speed.
@@ -1555,21 +473,21 @@ namespace TimeSeriesDB.IO
             // sortable format
             // 2008-04-10 06:30:00.1234567
 
-            int year = unchecked((int)BitMethods.Fast_AtoI_UInt32(m_buffer, m_offset, 4));
+            int year = unchecked((int)Fast_AtoI_UInt32(m_buffer, m_offset, 4));
             m_offset += 4;
 
             var b = m_buffer[m_offset];
             if(b == '-' || b == '/')
                 m_offset++;
 
-            int month = unchecked((int)BitMethods.Fast_AtoI_UInt32(m_buffer, m_offset, 2));
+            int month = unchecked((int)Fast_AtoI_UInt32(m_buffer, m_offset, 2));
             m_offset += 2;
 
             b = m_buffer[m_offset];
             if(b == '-' || b == '/')
                 m_offset++;
 
-            int day = unchecked((int)BitMethods.Fast_AtoI_UInt32(m_buffer, m_offset, 2));
+            int day = unchecked((int)Fast_AtoI_UInt32(m_buffer, m_offset, 2));
             m_offset += 3;
 
             var time = this.InternalGetTimeSpan(false);
@@ -1592,17 +510,17 @@ namespace TimeSeriesDB.IO
             if(readDays) {
                 var digits = this.CountDigits();
                 if(m_buffer[m_offset + digits] == '.')
-                    day = unchecked((int)BitMethods.Fast_AtoI_UInt32(m_buffer, m_offset, digits));
+                    day = unchecked((int)Fast_AtoI_UInt32(m_buffer, m_offset, digits));
             }
 
-            int hour = unchecked((int)BitMethods.Fast_AtoI_UInt32(m_buffer, m_offset, 2));
+            int hour = unchecked((int)Fast_AtoI_UInt32(m_buffer, m_offset, 2));
             m_offset += 2;
 
             var b = m_buffer[m_offset];
             if(b == ':')
                 m_offset++;
 
-            int minute = unchecked((int)BitMethods.Fast_AtoI_UInt32(m_buffer, m_offset, 2));
+            int minute = unchecked((int)Fast_AtoI_UInt32(m_buffer, m_offset, 2));
             m_offset += 2;
 
             b = m_buffer[m_offset];
@@ -1610,7 +528,7 @@ namespace TimeSeriesDB.IO
                 m_offset++;
 
             long millisecond = 0;
-            int second = unchecked((int)BitMethods.Fast_AtoI_UInt32(m_buffer, m_offset, 2));
+            int second = unchecked((int)Fast_AtoI_UInt32(m_buffer, m_offset, 2));
             m_offset += 2;
 
             b = m_buffer[m_offset];
@@ -1619,7 +537,7 @@ namespace TimeSeriesDB.IO
 
                 int digits = Math.Min(this.CountDigits(), 7);
 
-                millisecond = unchecked((int)BitMethods.Fast_AtoI_UInt32(m_buffer, m_offset, digits));
+                millisecond = unchecked((int)Fast_AtoI_UInt32(m_buffer, m_offset, digits));
                 m_offset += digits;
 
                 switch(digits) {
@@ -1662,11 +580,11 @@ namespace TimeSeriesDB.IO
                 return new CsvValue(res, CsvValue.DataKind.Decimal);
             } else if(dot_index < 0) {
                 if(len <= 9) {
-                    var res = BitMethods.Fast_AtoI_Int32(m_buffer, m_offset, len);
+                    var res = Fast_AtoI_Int32(m_buffer, m_offset, len);
                     m_offset += len;
                     return new CsvValue(res, CsvValue.DataKind.Int32);
                 } else if(len <= 19) {
-                    var res = BitMethods.Fast_AtoI_Int64(m_buffer, m_offset, len);
+                    var res = Fast_AtoI_Int64(m_buffer, m_offset, len);
                     m_offset += len;
                     if(res <= int.MaxValue && res >= int.MinValue)
                         return new CsvValue(unchecked((int)res), CsvValue.DataKind.Int32);
@@ -1748,6 +666,131 @@ namespace TimeSeriesDB.IO
             }
         }
         #endregion
+
+        // BitMethods imported functions
+        #region private static Fast_AtoI_Int32()
+        /// <summary>
+        ///     Fast ascii-to-integer.
+        /// </summary>
+        [MethodImpl(AggressiveInlining)]
+        private static int Fast_AtoI_Int32(byte[] buffer, int offset, int count) {
+            bool is_negative = false;
+            if(buffer[offset] == '-') {
+                is_negative = true;
+                offset++;
+                count--;
+            }
+            int res = 0;
+            switch(count) {
+                case 10: res  = (buffer[offset + count - 10] - '0') * 1000000000; goto case 9;
+                case 9:  res += (buffer[offset + count -  9] - '0') * 100000000;  goto case 8;
+                case 8:  res += (buffer[offset + count -  8] - '0') * 10000000;   goto case 7;
+                case 7:  res += (buffer[offset + count -  7] - '0') * 1000000;    goto case 6;
+                case 6:  res += (buffer[offset + count -  6] - '0') * 100000;     goto case 5;
+                case 5:  res += (buffer[offset + count -  5] - '0') * 10000;      goto case 4;
+                case 4:  res += (buffer[offset + count -  4] - '0') * 1000;       goto case 3;
+                case 3:  res += (buffer[offset + count -  3] - '0') * 100;        goto case 2;
+                case 2:  res += (buffer[offset + count -  2] - '0') * 10;         goto case 1;
+                case 1:  res += (buffer[offset + count -  1] - '0') * 1;          break;
+                default:
+                    throw new FormatException();
+            }
+            return !is_negative ? res : -res;
+        }
+        #endregion
+        #region private static Fast_AtoI_Int64()
+        /// <summary>
+        ///     Fast ascii-to-integer.
+        /// </summary>
+        [MethodImpl(AggressiveInlining)]
+        private static long Fast_AtoI_Int64(byte[] buffer, int offset, int count) {
+            bool is_negative = false;
+            if(buffer[offset] == '-') {
+                is_negative = true;
+                offset++;
+                count--;
+            }
+            long res = 0;
+            switch(count) {
+                case 19: res  = (buffer[offset + count - 19] - '0') * 1000000000000000000;  goto case 18;
+                case 18: res += (buffer[offset + count - 18] - '0') * 100000000000000000;   goto case 17;
+                case 17: res += (buffer[offset + count - 17] - '0') * 10000000000000000;    goto case 16;
+                case 16: res += (buffer[offset + count - 16] - '0') * 1000000000000000;     goto case 15;
+                case 15: res += (buffer[offset + count - 15] - '0') * 100000000000000;      goto case 14;
+                case 14: res += (buffer[offset + count - 14] - '0') * 10000000000000;       goto case 13;
+                case 13: res += (buffer[offset + count - 13] - '0') * 1000000000000;        goto case 12;
+                case 12: res += (buffer[offset + count - 12] - '0') * 100000000000;         goto case 11;
+                case 11: res += (buffer[offset + count - 11] - '0') * 10000000000;          goto case 10;
+                case 10: res += (buffer[offset + count - 10] - '0') * 1000000000;           goto case 9;
+                case 9:  res += (buffer[offset + count -  9] - '0') * 100000000;            goto case 8;
+                case 8:  res += (buffer[offset + count -  8] - '0') * 10000000;             goto case 7;
+                case 7:  res += (buffer[offset + count -  7] - '0') * 1000000;              goto case 6;
+                case 6:  res += (buffer[offset + count -  6] - '0') * 100000;               goto case 5;
+                case 5:  res += (buffer[offset + count -  5] - '0') * 10000;                goto case 4;
+                case 4:  res += (buffer[offset + count -  4] - '0') * 1000;                 goto case 3;
+                case 3:  res += (buffer[offset + count -  3] - '0') * 100;                  goto case 2;
+                case 2:  res += (buffer[offset + count -  2] - '0') * 10;                   goto case 1;
+                case 1:  res += (buffer[offset + count -  1] - '0') * 1;                    break;
+                default:
+                    throw new FormatException();
+            }
+            return !is_negative ? res : -res;
+        }
+        #endregion
+        #region private static Fast_AtoI_UInt32()
+        /// <summary>
+        ///     Fast ascii-to-integer.
+        /// </summary>
+        [MethodImpl(AggressiveInlining)]
+        private static uint Fast_AtoI_UInt32(byte[] buffer, int offset, int count) {
+            uint res = 0;
+            switch(count) {
+                case 10: res  = unchecked((uint)(buffer[offset + count - 10] - '0')) * 1000000000; goto case 9;
+                case 9:  res += unchecked((uint)(buffer[offset + count -  9] - '0')) * 100000000;  goto case 8;
+                case 8:  res += unchecked((uint)(buffer[offset + count -  8] - '0')) * 10000000;   goto case 7;
+                case 7:  res += unchecked((uint)(buffer[offset + count -  7] - '0')) * 1000000;    goto case 6;
+                case 6:  res += unchecked((uint)(buffer[offset + count -  6] - '0')) * 100000;     goto case 5;
+                case 5:  res += unchecked((uint)(buffer[offset + count -  5] - '0')) * 10000;      goto case 4;
+                case 4:  res += unchecked((uint)(buffer[offset + count -  4] - '0')) * 1000;       goto case 3;
+                case 3:  res += unchecked((uint)(buffer[offset + count -  3] - '0')) * 100;        goto case 2;
+                case 2:  res += unchecked((uint)(buffer[offset + count -  2] - '0')) * 10;         goto case 1;
+                case 1:  res += unchecked((uint)(buffer[offset + count -  1] - '0')) * 1;          break;
+                default:
+                    throw new FormatException();
+            }
+            return res;
+        }
+        #endregion
+        #region private static HexDecode()
+        /// <summary>
+        ///     Reads the bytes in hexadecimal format, assuming no prepending of any kind (0x).
+        /// </summary>
+        [MethodImpl(AggressiveInlining)]
+        private static void HexDecode(string source, int sourceOffset, int sourceCount, byte[] target, ref int offset) {
+            if(sourceCount <= 0)
+                return;
+            if(sourceCount % 2 != 0)
+                throw new ArgumentException("Not a multiple of 2.", nameof(sourceCount));
+
+            while(sourceCount > 0) {
+                target[offset++] = unchecked((byte)((HexDecode(source[sourceOffset + 0]) << 4) & HexDecode(source[sourceOffset + 1])));
+                sourceOffset += 2;
+                sourceCount -= 2;
+            }
+        }
+        [MethodImpl(AggressiveInlining)]
+        private static int HexDecode(char c) {
+            if(c <= '9' && c >= '0')
+                return c - '0';
+            if(c <= 'F' && c >= 'A')
+                return c - 'A' + 10;
+            if(c <= 'f' && c >= 'a')
+                return c - 'a' + 10;
+
+            throw new FormatException();
+        }
+        #endregion
+
 
         /// <summary>
         ///     A generic value wrapper.
@@ -1899,7 +942,7 @@ namespace TimeSeriesDB.IO
                 var val = (string)value.m_value;
                 var res = new byte[val.Length / 2];
                 int offset = 0;
-                BitMethods.HexDecode(val, 0, val.Length, res, ref offset);
+                HexDecode(val, 0, val.Length, res, ref offset);
                 return res;
             }
             #endregion

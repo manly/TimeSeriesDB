@@ -21,7 +21,7 @@ namespace TimeSeriesDB.IO
 
         private const int MIN_COMMIT_BUFFER_SIZE = 4096;
         private const int CHAR_BUFFER_SIZE       = 4096;
-        private const int MAX_BUFFER_SIZE        = BitMethods.ENCODESTRING_BUFFER_SIZE; // important to allow some overflow to speed up writes (avoids checking for overflows)
+        private const int MAX_BUFFER_SIZE        = 32768; // important to allow some overflow to speed up writes (avoids checking for overflows)
 
         private readonly Stream m_stream;
         private readonly byte[] m_buffer = new byte[MAX_BUFFER_SIZE];
@@ -36,42 +36,42 @@ namespace TimeSeriesDB.IO
         #region Write()
         [MethodImpl(AggressiveInlining)]
         public void Write(sbyte value) {
-            BitMethods.Fast_ItoA(m_buffer, ref m_offset, value);
+            Fast_ItoA(m_buffer, ref m_offset, value);
             this.TryFlushBuffer();
         }
         [MethodImpl(AggressiveInlining)]
         public void Write(short value) {
-            BitMethods.Fast_ItoA(m_buffer, ref m_offset, value);
+            Fast_ItoA(m_buffer, ref m_offset, value);
             this.TryFlushBuffer();
         }
         [MethodImpl(AggressiveInlining)]
         public void Write(int value) {
-            BitMethods.Fast_ItoA(m_buffer, ref m_offset, value);
+            Fast_ItoA(m_buffer, ref m_offset, value);
             this.TryFlushBuffer();
         }
         [MethodImpl(AggressiveInlining)]
         public void Write(long value) {
-            BitMethods.Fast_ItoA(m_buffer, ref m_offset, value);
+            Fast_ItoA(m_buffer, ref m_offset, value);
             this.TryFlushBuffer();
         }
         [MethodImpl(AggressiveInlining)]
         public void Write(byte value) {
-            BitMethods.Fast_ItoA(m_buffer, ref m_offset, value);
+            Fast_ItoA(m_buffer, ref m_offset, value);
             this.TryFlushBuffer();
         }
         [MethodImpl(AggressiveInlining)]
         public void Write(ushort value) {
-            BitMethods.Fast_ItoA(m_buffer, ref m_offset, value);
+            Fast_ItoA(m_buffer, ref m_offset, value);
             this.TryFlushBuffer();
         }
         [MethodImpl(AggressiveInlining)]
         public void Write(uint value) {
-            BitMethods.Fast_ItoA(m_buffer, ref m_offset, value);
+            Fast_ItoA(m_buffer, ref m_offset, value);
             this.TryFlushBuffer();
         }
         [MethodImpl(AggressiveInlining)]
         public void Write(ulong value) {
-            BitMethods.Fast_ItoA(m_buffer, ref m_offset, value);
+            Fast_ItoA(m_buffer, ref m_offset, value);
             this.TryFlushBuffer();
         }
         [MethodImpl(AggressiveInlining)]
@@ -182,7 +182,7 @@ namespace TimeSeriesDB.IO
         public void Write(byte[] value) {
             if(value != null) {
                 m_buffer[m_offset++] = (byte)'\"';
-                BitMethods.HexEncode(m_buffer, ref m_offset, m_stream, value, 0, value.Length);
+                HexEncode(m_buffer, ref m_offset, m_stream, value, 0, value.Length);
                 m_buffer[m_offset++] = (byte)'\"';
                 this.TryFlushBuffer();
             } else
@@ -200,7 +200,7 @@ namespace TimeSeriesDB.IO
                 var buffer = new byte[size];
 
                 while((read = value.Read(buffer, 0, size)) > 0)
-                    BitMethods.HexEncode(m_buffer, ref m_offset, m_stream, buffer, 0, read);
+                    HexEncode(m_buffer, ref m_offset, m_stream, buffer, 0, read);
 
                 m_buffer[m_offset++] = (byte)'\"';
 
@@ -389,10 +389,6 @@ namespace TimeSeriesDB.IO
         /// </summary>
         [MethodImpl(AggressiveInlining)]
         private void InternalWriteString(string value) {
-            // must be able to fit CHAR_BUFFER_SIZE + MIN_COMMIT_BUFFER_SIZE character encodings
-            //Debug.Assert(BitMethods.ENCODESTRING_BUFFER_SIZE >= Encoding.UTF8.GetMaxByteCount(CHAR_BUFFER_SIZE) + MIN_COMMIT_BUFFER_SIZE); // 12291
-            //Debug.Assert(m_buffer.Length == BitMethods.ENCODESTRING_BUFFER_SIZE);
-            
             int charIndex = 0;
             int remaining = value.Length;
             var encoder = Encoding.UTF8;
@@ -419,10 +415,6 @@ namespace TimeSeriesDB.IO
         /// </summary>
         [MethodImpl(AggressiveInlining)]
         private void InternalWriteStringDoubleQuote(string value) {
-            // must be able to fit CHAR_BUFFER_SIZE + MIN_COMMIT_BUFFER_SIZE character encodings
-            //Debug.Assert(BitMethods.ENCODESTRING_BUFFER_SIZE >= Encoding.UTF8.GetMaxByteCount(CHAR_BUFFER_SIZE) + MIN_COMMIT_BUFFER_SIZE); // 12291
-            //Debug.Assert(m_buffer.Length == BitMethods.ENCODESTRING_BUFFER_SIZE);
-
             m_buffer[m_offset++] = (byte)'\"';
             this.TryFlushBuffer(); // yep, really, the code assumes you dont have a full buffer before doing those writes, so flush it to be safe
 
@@ -483,7 +475,7 @@ namespace TimeSeriesDB.IO
             if(writeDays) {
                 temp = Math.Abs(value.Days);
                 if(temp > 0) {
-                    BitMethods.Fast_ItoA(m_buffer, ref m_offset, temp);
+                    Fast_ItoA(m_buffer, ref m_offset, temp);
                     m_buffer[m_offset++] = (byte)'.';
                 }
             }
@@ -516,6 +508,342 @@ namespace TimeSeriesDB.IO
             }
 
             this.TryFlushBuffer();
+        }
+        #endregion
+
+        // BitMethods imported functions
+        #region private static CountDigits10()
+        /// <summary>
+        ///     Returns the number of characters needed to represent the number.
+        /// </summary>
+        [MethodImpl(AggressiveInlining)]
+        private static int CountDigits10(byte value) {
+            if(value < 10)  return 1;
+            if(value < 100) return 2;
+            return 3;
+        }
+        /// <summary>
+        ///     Returns the number of characters needed to represent the number.
+        /// </summary>
+        [MethodImpl(AggressiveInlining)]
+        private static int CountDigits10(ushort value) {
+            if(value < 10)    return 1;
+            if(value < 100)   return 2;
+            if(value < 1000)  return 3;
+            if(value < 10000) return 4;
+            return 5;
+        }
+        /// <summary>
+        ///     Returns the number of characters needed to represent the number.
+        /// </summary>
+        [MethodImpl(AggressiveInlining)]
+        private static int CountDigits10(uint value) {
+            if(value < 10)   return 1;
+            if(value < 100)  return 2;
+            if(value < 1000) return 3;
+
+            if(value < 10000000) { // 4-7
+                if(value < 100000)
+                    return value < 10000 ? 4 : 5;
+                else
+                    return value < 1000000 ? 6 : 7;
+            } else { // 8-10
+                if(value < 1000000000)
+                    return value < 100000000 ? 8 : 9;
+                else
+                    return 10;
+            }
+        }
+        /// <summary>
+        ///     Returns the number of characters needed to represent the number.
+        /// </summary>
+        [MethodImpl(AggressiveInlining)]
+        private static int CountDigits10(ulong value) {
+            if(value < 10)    return 1;
+            if(value < 100)   return 2;
+            if(value < 1000)  return 3;
+            if(value < 10000) return 4;
+
+            if(value < 1000000000000) { // 5-12
+                if(value < 100000000) { // 5-8
+                    if(value < 1000000)
+                        return value < 100000 ? 5 : 6;
+                    else
+                        return value < 10000000 ? 7 : 8;
+                } else { // 9-12
+                    if(value < 10000000000)
+                        return value < 1000000000 ? 9 : 10;
+                    else
+                        return value < 100000000000 ? 11 : 12;
+                }
+            } else { // 13-20
+                if(value < 10000000000000000) { // 13-16
+                    if(value < 100000000000000)
+                        return value < 10000000000000 ? 13 : 14;
+                    else
+                        return value < 1000000000000000 ? 15 : 16;
+                } else { // 17-20
+                    if(value < 1000000000000000000)
+                        return value < 100000000000000000 ? 17 : 18;
+                    else
+                        return value < 10000000000000000000 ? 19 : 20;
+                }
+            }
+        }
+        #endregion
+        #region private static Fast_ItoA()
+        // written this way to help the compiler see it as a const
+        private static readonly byte[] ITOA_DECIMALS_BYTES = new byte[] {
+            (byte)'0',(byte)'0',  (byte)'0',(byte)'1',  (byte)'0',(byte)'2',  (byte)'0',(byte)'3',  (byte)'0',(byte)'4',  (byte)'0',(byte)'5',  (byte)'0',(byte)'6',  (byte)'0',(byte)'7',  (byte)'0',(byte)'8',  (byte)'0',(byte)'9',
+            (byte)'1',(byte)'0',  (byte)'1',(byte)'1',  (byte)'1',(byte)'2',  (byte)'1',(byte)'3',  (byte)'1',(byte)'4',  (byte)'1',(byte)'5',  (byte)'1',(byte)'6',  (byte)'1',(byte)'7',  (byte)'1',(byte)'8',  (byte)'1',(byte)'9',
+            (byte)'2',(byte)'0',  (byte)'2',(byte)'1',  (byte)'2',(byte)'2',  (byte)'2',(byte)'3',  (byte)'2',(byte)'4',  (byte)'2',(byte)'5',  (byte)'2',(byte)'6',  (byte)'2',(byte)'7',  (byte)'2',(byte)'8',  (byte)'2',(byte)'9',
+            (byte)'3',(byte)'0',  (byte)'3',(byte)'1',  (byte)'3',(byte)'2',  (byte)'3',(byte)'3',  (byte)'3',(byte)'4',  (byte)'3',(byte)'5',  (byte)'3',(byte)'6',  (byte)'3',(byte)'7',  (byte)'3',(byte)'8',  (byte)'3',(byte)'9',
+            (byte)'4',(byte)'0',  (byte)'4',(byte)'1',  (byte)'4',(byte)'2',  (byte)'4',(byte)'3',  (byte)'4',(byte)'4',  (byte)'4',(byte)'5',  (byte)'4',(byte)'6',  (byte)'4',(byte)'7',  (byte)'4',(byte)'8',  (byte)'4',(byte)'9',
+            (byte)'5',(byte)'0',  (byte)'5',(byte)'1',  (byte)'5',(byte)'2',  (byte)'5',(byte)'3',  (byte)'5',(byte)'4',  (byte)'5',(byte)'5',  (byte)'5',(byte)'6',  (byte)'5',(byte)'7',  (byte)'5',(byte)'8',  (byte)'5',(byte)'9',
+            (byte)'6',(byte)'0',  (byte)'6',(byte)'1',  (byte)'6',(byte)'2',  (byte)'6',(byte)'3',  (byte)'6',(byte)'4',  (byte)'6',(byte)'5',  (byte)'6',(byte)'6',  (byte)'6',(byte)'7',  (byte)'6',(byte)'8',  (byte)'6',(byte)'9',
+            (byte)'7',(byte)'0',  (byte)'7',(byte)'1',  (byte)'7',(byte)'2',  (byte)'7',(byte)'3',  (byte)'7',(byte)'4',  (byte)'7',(byte)'5',  (byte)'7',(byte)'6',  (byte)'7',(byte)'7',  (byte)'7',(byte)'8',  (byte)'7',(byte)'9',
+            (byte)'8',(byte)'0',  (byte)'8',(byte)'1',  (byte)'8',(byte)'2',  (byte)'8',(byte)'3',  (byte)'8',(byte)'4',  (byte)'8',(byte)'5',  (byte)'8',(byte)'6',  (byte)'8',(byte)'7',  (byte)'8',(byte)'8',  (byte)'8',(byte)'9',
+            (byte)'9',(byte)'0',  (byte)'9',(byte)'1',  (byte)'9',(byte)'2',  (byte)'9',(byte)'3',  (byte)'9',(byte)'4',  (byte)'9',(byte)'5',  (byte)'9',(byte)'6',  (byte)'9',(byte)'7',  (byte)'9',(byte)'8',  (byte)'9',(byte)'9',
+        };
+        /// <summary>
+        ///     Fast integer-to-ascii.
+        /// </summary>
+        private static void Fast_ItoA(byte[] buffer, ref int offset, byte value) {
+            int writeIndex = CountDigits10(value);
+            offset += writeIndex;
+            writeIndex = offset - 1;
+
+            if(value >= 100) {
+                int index = (value % 100) << 1;
+                value /= 100;
+                buffer[writeIndex - 1] = ITOA_DECIMALS_BYTES[index + 0];
+                buffer[writeIndex - 0] = ITOA_DECIMALS_BYTES[index + 1];
+                writeIndex -= 2;
+            }
+
+            if(value < 10)
+                buffer[writeIndex] = unchecked((byte)('0' + value));
+            else {
+                int index = value << 1;
+                buffer[writeIndex - 1] = ITOA_DECIMALS_BYTES[index + 0];
+                buffer[writeIndex - 0] = ITOA_DECIMALS_BYTES[index + 1];
+            }
+        }
+        /// <summary>
+        ///     Fast integer-to-ascii.
+        /// </summary>
+        private static void Fast_ItoA(byte[] buffer, ref int offset, ushort value) {
+            int writeIndex = CountDigits10(value);
+            offset += writeIndex;
+            writeIndex = offset - 1;
+
+            while(value >= 100) {
+                int index = (value % 100) << 1;
+                value /= 100;
+                buffer[writeIndex - 1] = ITOA_DECIMALS_BYTES[index + 0];
+                buffer[writeIndex - 0] = ITOA_DECIMALS_BYTES[index + 1];
+                writeIndex -= 2;
+            }
+
+            if(value < 10)
+                buffer[writeIndex] = unchecked((byte)('0' + value));
+            else {
+                int index = value << 1;
+                buffer[writeIndex - 1] = ITOA_DECIMALS_BYTES[index + 0];
+                buffer[writeIndex - 0] = ITOA_DECIMALS_BYTES[index + 1];
+            }
+        }
+        /// <summary>
+        ///     Fast integer-to-ascii.
+        /// </summary>
+        private static void Fast_ItoA(byte[] buffer, ref int offset, uint value) {
+            int writeIndex = CountDigits10(value);
+            offset += writeIndex;
+            writeIndex = offset - 1;
+
+            while(value >= 100) {
+                var index = (value % 100) << 1;
+                value /= 100;
+                buffer[writeIndex - 1] = ITOA_DECIMALS_BYTES[index + 0];
+                buffer[writeIndex - 0] = ITOA_DECIMALS_BYTES[index + 1];
+                writeIndex -= 2;
+            }
+
+            if(value < 10)
+                buffer[writeIndex] = unchecked((byte)('0' + value));
+            else {
+                var index = value << 1;
+                buffer[writeIndex - 1] = ITOA_DECIMALS_BYTES[index + 0];
+                buffer[writeIndex - 0] = ITOA_DECIMALS_BYTES[index + 1];
+            }
+        }
+        /// <summary>
+        ///     Fast integer-to-ascii.
+        /// </summary>
+        private static void Fast_ItoA(byte[] buffer, ref int offset, ulong value) {
+            int writeIndex = CountDigits10(value);
+            offset += writeIndex;
+            writeIndex = offset - 1;
+
+            while(value >= 100) {
+                var index = (value % 100) << 1;
+                value /= 100;
+                buffer[writeIndex - 1] = ITOA_DECIMALS_BYTES[index + 0];
+                buffer[writeIndex - 0] = ITOA_DECIMALS_BYTES[index + 1];
+                writeIndex -= 2;
+            }
+
+            if(value < 10)
+                buffer[writeIndex] = unchecked((byte)('0' + value));
+            else {
+                var index = value << 1;
+                buffer[writeIndex - 1] = ITOA_DECIMALS_BYTES[index + 0];
+                buffer[writeIndex - 0] = ITOA_DECIMALS_BYTES[index + 1];
+            }
+        }
+        /// <summary>
+        ///     Fast integer-to-ascii.
+        /// </summary>
+        private static void Fast_ItoA(byte[] buffer, ref int offset, sbyte value) {
+            if(value < 0) {
+                value = unchecked((sbyte)-value);
+                buffer[offset++] = (byte)'-';
+            }
+            int writeIndex = CountDigits10(unchecked((byte)value));
+            offset += writeIndex;
+            writeIndex = offset - 1;
+
+            if(value >= 100) {
+                int index = (value % 100) << 1;
+                value /= 100;
+                buffer[writeIndex - 1] = ITOA_DECIMALS_BYTES[index + 0];
+                buffer[writeIndex - 0] = ITOA_DECIMALS_BYTES[index + 1];
+                writeIndex -= 2;
+            }
+
+            if(value < 10)
+                buffer[writeIndex] = unchecked((byte)('0' + value));
+            else {
+                int index = value << 1;
+                buffer[writeIndex - 1] = ITOA_DECIMALS_BYTES[index + 0];
+                buffer[writeIndex - 0] = ITOA_DECIMALS_BYTES[index + 1];
+            }
+        }
+        /// <summary>
+        ///     Fast integer-to-ascii.
+        /// </summary>
+        private static void Fast_ItoA(byte[] buffer, ref int offset, short value) {
+            if(value < 0) {
+                value = unchecked((short)-value);
+                buffer[offset++] = (byte)'-';
+            }
+            int writeIndex = CountDigits10(unchecked((ushort)value));
+            offset += writeIndex;
+            writeIndex = offset - 1;
+
+            while(value >= 100) {
+                int index = (value % 100) << 1;
+                value /= 100;
+                buffer[writeIndex - 1] = ITOA_DECIMALS_BYTES[index + 0];
+                buffer[writeIndex - 0] = ITOA_DECIMALS_BYTES[index + 1];
+                writeIndex -= 2;
+            }
+
+            if(value < 10)
+                buffer[writeIndex] = unchecked((byte)('0' + value));
+            else {
+                int index = value << 1;
+                buffer[writeIndex - 1] = ITOA_DECIMALS_BYTES[index + 0];
+                buffer[writeIndex - 0] = ITOA_DECIMALS_BYTES[index + 1];
+            }
+        }
+        /// <summary>
+        ///     Fast integer-to-ascii.
+        /// </summary>
+        private static void Fast_ItoA(byte[] buffer, ref int offset, int value) {
+            if(value < 0) {
+                value = -value;
+                buffer[offset++] = (byte)'-';
+            }
+            int writeIndex = CountDigits10(unchecked((uint)value));
+            offset += writeIndex;
+            writeIndex = offset - 1;
+
+            while(value >= 100) {
+                int index = (value % 100) << 1;
+                value /= 100;
+                buffer[writeIndex - 1] = ITOA_DECIMALS_BYTES[index + 0];
+                buffer[writeIndex - 0] = ITOA_DECIMALS_BYTES[index + 1];
+                writeIndex -= 2;
+            }
+
+            if(value < 10)
+                buffer[writeIndex] = unchecked((byte)('0' + value));
+            else {
+                int index = value << 1;
+                buffer[writeIndex - 1] = ITOA_DECIMALS_BYTES[index + 0];
+                buffer[writeIndex - 0] = ITOA_DECIMALS_BYTES[index + 1];
+            }
+        }
+        /// <summary>
+        ///     Fast integer-to-ascii.
+        /// </summary>
+        private static void Fast_ItoA(byte[] buffer, ref int offset, long value) {
+            if(value < 0) {
+                value = -value;
+                buffer[offset++] = (byte)'-';
+            }
+            int writeIndex = CountDigits10(unchecked((ulong)value));
+            offset += writeIndex;
+            writeIndex = offset - 1;
+
+            while(value >= 100) {
+                var index = (value % 100) << 1;
+                value /= 100;
+                buffer[writeIndex - 1] = ITOA_DECIMALS_BYTES[index + 0];
+                buffer[writeIndex - 0] = ITOA_DECIMALS_BYTES[index + 1];
+                writeIndex -= 2;
+            }
+
+            if(value < 10)
+                buffer[writeIndex] = unchecked((byte)('0' + value));
+            else {
+                var index = value << 1;
+                buffer[writeIndex - 1] = ITOA_DECIMALS_BYTES[index + 0];
+                buffer[writeIndex - 0] = ITOA_DECIMALS_BYTES[index + 1];
+            }
+        }
+        #endregion
+        #region private static HexEncode()
+        /// <summary>
+        ///     Writes the bytes in hexadecimal format, with no prepending of any kind (0x) and in uppercase.
+        /// </summary>
+        //[MethodImpl(AggressiveInlining)] // most likely a slowdown if called on many places, due to worse branch prediction if enabled
+        private static void HexEncode(byte[] destBuffer, ref int destOffset, Stream destStream, byte[] sourceBuffer, int sourceOffset, int count) {
+            int write_buffer_size = destBuffer.Length;
+
+            while(count > 0) {
+                int read = Math.Min(write_buffer_size - destOffset, count << 1) >> 1;
+
+                count -= read;
+
+                while(read-- > 0) {
+                    int rawByte = sourceBuffer[sourceOffset++];
+
+                    int low = rawByte & 0x0F;
+                    int high = rawByte >> 4;
+
+                    destBuffer[destOffset + 0] = high < 10 ? unchecked((byte)('0' + high)) : unchecked((byte)('A' + high - 10));
+                    destBuffer[destOffset + 1] = low < 10  ? unchecked((byte)('0' + low))  : unchecked((byte)('A' + low - 10));
+                    destOffset += 2;
+                }
+
+                // if we can't fit one hex-encoded item, then flush
+                if(destOffset >= write_buffer_size - 1) {
+                    destStream.Write(destBuffer, 0, destOffset);
+                    destOffset = 0;
+                }
+            }
         }
         #endregion
     }
