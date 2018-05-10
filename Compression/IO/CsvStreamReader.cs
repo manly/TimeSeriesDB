@@ -130,6 +130,25 @@ namespace TimeSeriesDB.IO
         }
         #endregion
 
+        #region GetValues()
+        /// <summary>
+        ///     Shortcut to read the values from the current row.
+        ///     Returns the number of returned/read columns.
+        /// </summary>
+        public int GetValues(CsvValue[] values) {
+            if(values == null)
+                return 0;
+
+            var count = Math.Min(this.FieldCount, values.Length);
+            
+            //Array.Copy(m_row, values, count);
+            for(int i = 0; i < count; i++)
+                values[i] = m_row[i];
+
+            return count;
+        }
+        #endregion
+
         #region private RefreshBuffer()
         /// <summary>
         ///     Refreshes the buffer and downshifts the remaining (unread) data.
