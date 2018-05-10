@@ -65,9 +65,14 @@ namespace TimeSeriesDB.IO
                             m_offset++;
                             continue;
                         }
-                        if(b == '\n') {
+                        if(b == '\r') {
                             m_offset++;
-                            return this.FieldCount > 0;
+                            continue;
+                        }
+                        if(b == '\n') {
+                            m_row[this.FieldCount++] = CsvValue.Null; // new CsvValue(null, DataKind.Null)
+                            m_offset++;
+                            return true;
                         }
                         break;
                     }
