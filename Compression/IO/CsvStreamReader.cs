@@ -108,7 +108,7 @@ namespace TimeSeriesDB.IO
         public int FieldCount { get; private set; }
         #endregion
         #region this[]
-        public CsvValue this[int columnIndex] => m_row[columnIndex];
+        public object this[int columnIndex] => m_row[columnIndex].Value;
         #endregion
         #region SkipColumns
         /// <summary>
@@ -135,43 +135,15 @@ namespace TimeSeriesDB.IO
         }
         #endregion
 
+        #region GetValue()
+        public object GetValue(int columnIndex) => m_row[columnIndex].Value;
+        #endregion
         #region GetValues()
         /// <summary>
         ///     Shortcut to read the values from the current row.
         ///     Returns the number of returned/read columns.
         /// </summary>
-        public int GetValues(CsvValue[] values) {
-            if(values == null)
-                return 0;
-
-            var count = Math.Min(this.FieldCount, values.Length);
-            
-            //Array.Copy(m_row, values, count);
-            for(int i = 0; i < count; i++)
-                values[i] = m_row[i];
-
-            return count;
-        }
-        /// <summary>
-        ///     Shortcut to read the values from the current row.
-        /// </summary>
-        public CsvValue[] GetValues() {
-            var count = this.FieldCount;
-            var res = new CsvValue[count];
-            
-            //Array.Copy(m_row, res, count);
-            for(int i = 0; i < count; i++)
-                res[i] = m_row[i];
-
-            return res;
-        }
-        #endregion
-        #region GetRawValues()
-        /// <summary>
-        ///     Shortcut to read the values from the current row.
-        ///     Returns the number of returned/read columns.
-        /// </summary>
-        public int GetRawValues(object[] values) {
+        public int GetValues(object[] values) {
             if(values == null)
                 return 0;
 
@@ -184,12 +156,46 @@ namespace TimeSeriesDB.IO
         /// <summary>
         ///     Shortcut to read the values from the current row.
         /// </summary>
-        public object[] GetRawValues() {
+        public object[] GetValues() {
             var count = this.FieldCount;
             var res = new object[count];
             
             for(int i = 0; i < count; i++)
                 res[i] = m_row[i].Value;
+
+            return res;
+        }
+        #endregion
+        #region GetRawValue()
+        public CsvValue GetRawValue(int columnIndex) => m_row[columnIndex];
+        #endregion
+        #region GetRawValues()
+        /// <summary>
+        ///     Shortcut to read the CsvValues from the current row.
+        ///     Returns the number of returned/read columns.
+        /// </summary>
+        public int GetRawValues(CsvValue[] values) {
+            if(values == null)
+                return 0;
+
+            var count = Math.Min(this.FieldCount, values.Length);
+            
+            //Array.Copy(m_row, values, count);
+            for(int i = 0; i < count; i++)
+                values[i] = m_row[i];
+
+            return count;
+        }
+        /// <summary>
+        ///     Shortcut to read the CsvValues from the current row.
+        /// </summary>
+        public CsvValue[] GetRawValues() {
+            var count = this.FieldCount;
+            var res = new CsvValue[count];
+            
+            //Array.Copy(m_row, res, count);
+            for(int i = 0; i < count; i++)
+                res[i] = m_row[i];
 
             return res;
         }
@@ -1028,7 +1034,7 @@ namespace TimeSeriesDB.IO
 
             #region ToString()
             public override string ToString() {
-                if(m_value == null) // this.Kind == DataKind.Null
+                if(this.IsNull)
                     return string.Empty;
                 return m_value?.ToString();
             }
