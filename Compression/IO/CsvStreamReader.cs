@@ -152,6 +152,47 @@ namespace TimeSeriesDB.IO
 
             return count;
         }
+        /// <summary>
+        ///     Shortcut to read the values from the current row.
+        /// </summary>
+        public CsvValue[] GetValues() {
+            var count = this.FieldCount;
+            var res = new CsvValue[count];
+            
+            //Array.Copy(m_row, res, count);
+            for(int i = 0; i < count; i++)
+                res[i] = m_row[i];
+
+            return res;
+        }
+        #endregion
+        #region GetRawValues()
+        /// <summary>
+        ///     Shortcut to read the values from the current row.
+        ///     Returns the number of returned/read columns.
+        /// </summary>
+        public int GetRawValues(object[] values) {
+            if(values == null)
+                return 0;
+
+            var count = Math.Min(this.FieldCount, values.Length);
+            for(int i = 0; i < count; i++)
+                values[i] = m_row[i].Value;
+
+            return count;
+        }
+        /// <summary>
+        ///     Shortcut to read the values from the current row.
+        /// </summary>
+        public object[] GetRawValues() {
+            var count = this.FieldCount;
+            var res = new object[count];
+            
+            for(int i = 0; i < count; i++)
+                res[i] = m_row[i].Value;
+
+            return res;
+        }
         #endregion
 
         #region private RefreshBuffer()
@@ -987,6 +1028,8 @@ namespace TimeSeriesDB.IO
 
             #region ToString()
             public override string ToString() {
+                if(m_value == null) // this.Kind == DataKind.Null
+                    return string.Empty;
                 return m_value?.ToString();
             }
             #endregion
