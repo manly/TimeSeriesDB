@@ -9,8 +9,6 @@ using System.Diagnostics;
 
 namespace TimeSeriesDB.IO
 {
-    using Internal;
-
     /// <summary>
     ///     Efficient CSV file writer.
     ///     This is significantly faster than StreamWriter/StringWriter because no convertion takes place and all writes are hand-coded for speed.
@@ -219,32 +217,34 @@ namespace TimeSeriesDB.IO
                 this.Write(b);
             else if(value is double c)
                 this.Write(c);
-            else if(value is float d)
+            else if(value is decimal d)
                 this.Write(d);
-            else if(value is bool e)
+            else if(value is float e)
                 this.Write(e);
-            else if(value is ulong f)
+            else if(value is bool f)
                 this.Write(f);
-            else if(value is string g)
+            else if(value is ulong g)
                 this.Write(g);
-            else if(value is byte h)
+            else if(value is string h)
                 this.Write(h);
-            else if(value is uint i)
+            else if(value is byte i)
                 this.Write(i);
-            else if(value is ushort j)
+            else if(value is uint j)
                 this.Write(j);
-            else if(value is short k)
+            else if(value is ushort k)
                 this.Write(k);
-            else if(value is sbyte l)
+            else if(value is short l)
                 this.Write(l);
-            else if(value is DateTime m)
+            else if(value is sbyte m)
                 this.Write(m);
-            else if(value is TimeSpan n)
+            else if(value is DateTime n)
                 this.Write(n);
-            else if(value is byte[] o)
+            else if(value is TimeSpan o)
                 this.Write(o);
-            else if(value is Stream p)
+            else if(value is byte[] p)
                 this.Write(p);
+            else if(value is Stream q)
+                this.Write(q);
             else
                 throw new NotSupportedException();
         }
