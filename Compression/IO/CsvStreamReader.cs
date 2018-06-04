@@ -2,6 +2,7 @@
 using System.Globalization;
 using System.IO;
 using System.Text;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using static System.Runtime.CompilerServices.MethodImplOptions;
 using System.Diagnostics;
@@ -135,6 +136,37 @@ namespace TimeSeriesDB.IO
         }
         #endregion
 
+        #region GetRows()
+        /// <summary>
+        ///     Shortcut to read all rows.
+        ///     By default, will return the same row instances.
+        /// </summary>
+        public IEnumerable<object[]> GetRows(bool returnNewRowsOnly = false) {
+            object[][] cache = null;
+
+            while(this.Read()) {
+                object[] row;
+
+                if(returnNewRowsOnly)
+                    row = new object[this.FieldCount];
+                else {
+                    if(cache == null || cache.Length < this.FieldCount) {
+                        var old_size = cache?.Length ?? 0;
+                        if(cache == null)
+                            cache = new object[this.FieldCount][];
+                        else if(cache.Length < this.FieldCount)
+                            Array.Resize(ref cache, this.FieldCount);
+                        for(int i = old_size; i < cache.Length; i++)
+                            cache[i] = new object[i];
+                    }
+                    row = cache[this.FieldCount];
+                }
+                
+                this.GetValues(row);
+                yield return row;
+            }
+        }
+        #endregion
         #region GetValue()
         public object GetValue(int columnIndex) => m_row[columnIndex].Value;
         #endregion
