@@ -13,6 +13,7 @@ namespace TimeSeriesDB.IO
 /// <summary>
     ///     Efficient CSV file reader.
     ///     This is significantly faster than StreamReader/StringReader because no convertion takes place and all reads are hand-coded for speed.
+    ///     Everything is decoded in UTF-8.
     /// </summary>
     public sealed class CsvStreamReader : IDisposable {
         private static readonly CultureInfo FORMAT = CultureInfo.InvariantCulture;
