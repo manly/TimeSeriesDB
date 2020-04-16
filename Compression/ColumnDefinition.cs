@@ -656,8 +656,8 @@ namespace TimeSeriesDB
                 this.BitSize == other.BitSize &&
                 this.Encoding == other.Encoding &&
                 //this.DataType == other.DataType &&
-                string.CompareOrdinal(this.Name, other.Name) == 0 &&
-                string.CompareOrdinal(this.TypeName, other.TypeName) == 0 &&
+                this.Name == other.Name &&
+                this.TypeName == other.TypeName &&
                 this.Compression == other.Compression;
         }
         public override bool Equals(object obj) {

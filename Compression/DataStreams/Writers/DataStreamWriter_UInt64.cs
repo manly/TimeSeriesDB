@@ -347,6 +347,5 @@ namespace TimeSeriesDB.DataStreams.Writers
             #endregion
         }
         #endregion
-
     }
 }

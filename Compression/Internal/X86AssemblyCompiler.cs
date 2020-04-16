@@ -13,7 +13,7 @@ using System.Linq;
 In order to generate the assembly I started a new VC++ project, 
 created the functions I wanted, then went to Debug-->Windows-->Disassembly. 
 For compiler options I disabled inlining, enabled intrinsics, favored fast code, 
-omitted frame pointers, disabled security checks and SDL (Security Development Lifecycle ) checks.
+omitted frame pointers, disabled security checks and SDL (Security Development Lifecycle) checks.
 
 ===============================
 

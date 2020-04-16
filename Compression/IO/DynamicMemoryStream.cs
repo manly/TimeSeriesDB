@@ -12,9 +12,7 @@ namespace TimeSeriesDB.IO
     /// </summary>
     public sealed class DynamicMemoryStream : Stream {
         private const int              BUFFER_SIZE               = 256;           // initial capacity, as well as doubled every new section
-        private const int              MAX_BUFFER_SIZE           = 1 * 1048576;   // 1 MB (for easier consecutive memory allocation)
-        private const int              MAX_REQUEST_BUFFER_SIZE   = 128 * 1048576; // 128 MB (requests are capped at this size)
-        private static readonly int    MAX_BUFFER_SIZE_SHIFT     = (int)Math.Log(MAX_BUFFER_SIZE / BUFFER_SIZE, 2);
+        private const int              MAX_BUFFER_SIZE           = 128 * 1048576; // 128 MB (for easier consecutive memory allocation)
         private const IncreaseBehavior DEFAULT_INCREASE_BEHAVIOR = IncreaseBehavior.WriteZeroes;
 
         private long m_length;
@@ -122,6 +120,17 @@ namespace TimeSeriesDB.IO
             if(m_position >= m_length)
                 return -1;
 
+            if(m_currentRemaining == 0) { // end of section
+                if(m_sectionIndex < m_sections.Count - 1) {
+                    var section        = m_sections[++m_sectionIndex];
+
+                    m_current          = section.Buffer;
+                    m_currentIndex     = section.Index;
+                    m_currentRemaining = section.Length;
+                } else
+                    return -1;
+            }
+
             int res = m_current[m_currentIndex++];
 
             m_position++;
@@ -159,15 +168,15 @@ namespace TimeSeriesDB.IO
                 if(write > 8) {
                     Buffer.BlockCopy(buffer, offset, m_current, m_currentIndex, write);
                     m_currentIndex += write;
-                    offset += write;
+                    offset         += write;
                 } else {
                     int byteCount = write;
                     while(--byteCount >= 0)
                         m_current[m_currentIndex++] = buffer[offset++];
                 }
 
-                count -= write;
-                m_position += write;
+                count              -= write;
+                m_position         += write;
                 m_currentRemaining -= write;
                 if(m_length < m_position)
                     m_length = m_position;
@@ -194,8 +203,6 @@ namespace TimeSeriesDB.IO
             // if we were past the buffers, then clear between m_length to m_position
             if(m_position > m_length || m_currentRemaining == 0)
                 this.InternalSetLength(m_position + 1, 1);
-
-            System.Diagnostics.Debug.Assert(m_currentRemaining > 0);
             
             m_current[m_currentIndex++] = value;
 
@@ -323,7 +330,7 @@ namespace TimeSeriesDB.IO
             for(int i = startSection; i < count; i++) {
                 current = m_sections[i];
 
-                if(current.CumulativePosition + current.Length <= value) {
+                if(current.CumulativePosition + current.Length >= value) {
                     // found the last section needed, so remove sections after it
 
                     int remove_count = m_sections.Count - (i + 1);
@@ -422,14 +429,14 @@ namespace TimeSeriesDB.IO
                     m_sections.Add(new Section(buffer, 0, buffer.Length, 0));
 
                 additionalBytes -= buffer.Length;
-                this.Capacity += buffer.Length;
+                this.Capacity   += buffer.Length;
             }
         }
         #endregion
         #region private DecreaseCapacityTo()
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void DecreaseCapacityTo(long capacity) {
-            System.Diagnostics.Debug.Assert(this.Capacity >= capacity && capacity >= this.Length && capacity > 0);
+            System.Diagnostics.Debug.Assert(this.Capacity >= capacity && capacity > 0);
 
             while(this.Capacity > capacity) {
                 var lastIndex = m_sections.Count - 1;
@@ -446,35 +453,36 @@ namespace TimeSeriesDB.IO
 
         #region private GenerateNextBuffer()
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private byte[] GenerateNextBuffer(int size) {
-            // always double BUFFER_SIZE on every alloc until MAX_BUFFER_SIZE
-            // any request larger than current buffer_size will be increased to line up with the buffer_size, up until MAX_REQUEST_BUFFER_SIZE
-
-            int buffer_size = BUFFER_SIZE << Math.Min(m_sections.Count, MAX_BUFFER_SIZE_SHIFT);
-            if(size > buffer_size) {
-                buffer_size = size < MAX_REQUEST_BUFFER_SIZE - buffer_size ?
-                    (((size / buffer_size) + ((size % buffer_size) == 0 ? 0 : 1)) * buffer_size) :
-                    MAX_REQUEST_BUFFER_SIZE;
-            }
-            return new byte[buffer_size];
-            //int finalSize = size < MAX_REQUEST_BUFFER_SIZE - BUFFER_SIZE ?
-            //    (((size / BUFFER_SIZE) + ((size % BUFFER_SIZE) == 0 ? 0 : 1)) * BUFFER_SIZE) :
-            //    MAX_REQUEST_BUFFER_SIZE;
-            //return new byte[finalSize];
-        }
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private byte[] GenerateNextBuffer(long size) {
-            int buffer_size = BUFFER_SIZE << Math.Min(m_sections.Count, MAX_BUFFER_SIZE_SHIFT);
-            if(size > buffer_size) {
-                buffer_size = size < MAX_REQUEST_BUFFER_SIZE - buffer_size ?
-                    unchecked((((int)size / buffer_size) + (((int)size % buffer_size) == 0 ? 0 : 1)) * buffer_size) :
-                    MAX_REQUEST_BUFFER_SIZE;
+            // this uses 2 different strategies
+            // - the generic [capacity * 2]
+            // - in case a lot of small buffers were manually provided and not automatically generated (through AddCapacity)
+            //   then theres a minimum size. The goal is avoiding fragmentation/too many sections
+
+            const int PAGE_SIZE = 4096;
+
+            //long strategy1 = this.Capacity << 1; 
+            long strategy1 = (long)1 << (Log2(this.Capacity) + 1); // rounddown(capacity, exponent of 2) * 2
+            long strategy2 = (long)BUFFER_SIZE << m_sections.Count;
+
+            long max       = Math.Max(Math.Max(strategy1, strategy2), size);
+            int finalSize  = RoundUp(max, max >= PAGE_SIZE ? PAGE_SIZE : BUFFER_SIZE); // round to BUFFER_SIZE until pagesize
+
+            return new byte[finalSize];
+
+            // roundsup to round, and caps at MAX_BUFFER_SIZE
+            int RoundUp(long value, long round) {
+                return unchecked((int)(value < MAX_BUFFER_SIZE - round ?
+                    ((value / round) + ((value % round) == 0 ? 0 : 1)) * round :
+                    MAX_BUFFER_SIZE));
             }
-            return new byte[buffer_size];
-            //int finalSize = size < MAX_REQUEST_BUFFER_SIZE - BUFFER_SIZE ?
-            //    unchecked((((int)size / BUFFER_SIZE) + (((int)size % BUFFER_SIZE) == 0 ? 0 : 1)) * BUFFER_SIZE) :
-            //    MAX_REQUEST_BUFFER_SIZE;
-            //return new byte[finalSize];
+            int Log2(long value) {
+                // could be faster with intrinsics
+                int res = 0;
+                while((value >>= 1) > 0)
+                    res++;
+                return res;
+            }
         }
         #endregion
 

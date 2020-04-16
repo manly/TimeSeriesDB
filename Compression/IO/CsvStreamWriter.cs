@@ -15,7 +15,7 @@ namespace TimeSeriesDB.IO
     ///     Everything is encoded in UTF-8.
     /// </summary>
     public sealed class CsvStreamWriter : IDisposable {
-        private CultureInfo FORMAT = CultureInfo.InvariantCulture;
+        private static readonly CultureInfo FORMAT = CultureInfo.InvariantCulture;
 
         private const int MIN_COMMIT_BUFFER_SIZE = 4096;
         private const int CHAR_BUFFER_SIZE       = 4096;

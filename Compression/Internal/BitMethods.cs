@@ -279,45 +279,59 @@ namespace TimeSeriesDB.Internal
         #region static SignedToUnsigned()
         /// <summary>
         ///     Encodes negative values as a LSB flag for better compressibility.
+        ///     This method can be vectorized.
         /// </summary>
         [MethodImpl(AggressiveInlining)]
         public static ulong SignedToUnsigned(long value) {
-            if(value >= 0)
-                return unchecked((ulong)value) << 1;
-            else
-                return (unchecked((ulong)(~value)) << 1) | 1;
+            // aka ZigZag encoding, see https://developers.google.com/protocol-buffers/docs/encoding
+            return unchecked((ulong)((value << 1) ^ (value >> 63)));
+
+            //if(value >= 0)
+            //    return unchecked((ulong)value) << 1;
+            //else
+            //    return ((~unchecked((ulong)value)) << 1) | 1;
         }
         /// <summary>
         ///     Encodes negative values as a LSB flag for better compressibility.
+        ///     This method can be vectorized.
         /// </summary>
         [MethodImpl(AggressiveInlining)]
         public static uint SignedToUnsigned(int value) {
-            if(value >= 0)
-                return unchecked((uint)value) << 1;
-            else
-                return (unchecked((uint)(~value)) << 1) | 1;
+            // aka ZigZag encoding, see https://developers.google.com/protocol-buffers/docs/encoding
+            return unchecked((uint)((value << 1) ^ (value >> 31)));
+
+            //if(value >= 0)
+            //    return unchecked((uint)value) << 1;
+            //else
+            //    return ((~unchecked((uint)value)) << 1) | 1;
         }
         /// <summary>
         ///     Encodes negative values as a LSB flag for better compressibility.
+        ///     This method can be vectorized.
         /// </summary>
         [MethodImpl(AggressiveInlining)]
         public static ushort SignedToUnsigned(short value) {
-            if(value >= 0)
-                // no bitshift operator on ushort
-                return unchecked((ushort)((uint)value << 1));
-            else
-                return unchecked((ushort)(((uint)(~value) << 1) | 1));
+            // aka ZigZag encoding, see https://developers.google.com/protocol-buffers/docs/encoding
+            return unchecked((ushort)((value << 1) ^ (value >> 15)));
+
+            //if(value >= 0)
+            //    return unchecked((ushort)(value << 1));
+            //else
+            //    return unchecked((ushort)((~value << 1) | 1));
         }
         /// <summary>
         ///     Encodes negative values as a LSB flag for better compressibility.
+        ///     This method can be vectorized.
         /// </summary>
         [MethodImpl(AggressiveInlining)]
         public static byte SignedToUnsigned(sbyte value) {
-            if(value >= 0)
-                // no bitshift operator on sbyte
-                return unchecked((byte)((uint)value << 1));
-            else
-                return unchecked((byte)(((uint)(~value) << 1) | 1));
+            // aka ZigZag encoding, see https://developers.google.com/protocol-buffers/docs/encoding
+            return unchecked((byte)((value << 1) ^ (value >> 7)));
+
+            //if(value >= 0)
+            //    return unchecked((byte)(value << 1));
+            //else
+            //    return unchecked((byte)(((~value) << 1) | 1));
         }
         #endregion
         #region static UnsignedToSigned()
@@ -326,6 +340,7 @@ namespace TimeSeriesDB.Internal
         /// </summary>
         [MethodImpl(AggressiveInlining)]
         public static long UnsignedToSigned(ulong value) {
+            // aka ZigZag encoding, see https://developers.google.com/protocol-buffers/docs/encoding
             if((value & 1) == 0)
                 return unchecked((long)(value >> 1));
             else
@@ -336,6 +351,7 @@ namespace TimeSeriesDB.Internal
         /// </summary>
         [MethodImpl(AggressiveInlining)]
         public static int UnsignedToSigned(uint value) {
+            // aka ZigZag encoding, see https://developers.google.com/protocol-buffers/docs/encoding
             if((value & 1) == 0)
                 return unchecked((int)(value >> 1));
             else
@@ -346,6 +362,7 @@ namespace TimeSeriesDB.Internal
         /// </summary>
         [MethodImpl(AggressiveInlining)]
         public static short UnsignedToSigned(ushort value) {
+            // aka ZigZag encoding, see https://developers.google.com/protocol-buffers/docs/encoding
             if((value & 1) == 0)
                 return unchecked((short)(value >> 1));
             else {
@@ -358,6 +375,7 @@ namespace TimeSeriesDB.Internal
         /// </summary>
         [MethodImpl(AggressiveInlining)]
         public static sbyte UnsignedToSigned(byte value) {
+            // aka ZigZag encoding, see https://developers.google.com/protocol-buffers/docs/encoding
             if((value & 1) == 0)
                 return unchecked((sbyte)(value >> 1));
             else {
@@ -1354,6 +1372,50 @@ namespace TimeSeriesDB.Internal
             }
         }
         #endregion
+        #region static WriteSpan()
+        //[MethodImpl(AggressiveInlining)]
+        public static void WriteSpan(byte[] buffer, ref int index, Stream stream, in ReadOnlySpan<byte> value) {
+            // 20% speedup for using "ref int index" instead of returning the new index
+
+            var remaining = value.Length;
+            if(remaining == 0)
+                return;
+            
+            var processed = Math.Min(remaining, buffer.Length - index);
+
+            // Buffer.BlockCopy()
+            if(remaining <= value.Length)
+                value.CopyTo(new Span<byte>(buffer, index, processed));
+            else
+                value.Slice(0, processed).CopyTo(new Span<byte>(buffer, index, processed));
+
+            index += processed;
+
+            if(index == buffer.Length) {
+                stream.Write(buffer, 0, index);
+                index = 0;
+            }
+
+            remaining    -= processed;
+            var readIndex = processed;
+
+            while(remaining > 0) {
+                processed = Math.Min(remaining, buffer.Length - index);
+
+                // Buffer.BlockCopy()
+                value.Slice(readIndex, processed).CopyTo(new Span<byte>(buffer, index, processed));
+
+                remaining -= processed;
+                readIndex += processed;
+                index     += processed;
+
+                if(index == buffer.Length) {
+                    stream.Write(buffer, 0, index);
+                    index = 0;
+                }
+            }
+        }
+        #endregion
 
         #region static EncodeByteArray()
         /// <summary>
@@ -1847,6 +1909,7 @@ namespace TimeSeriesDB.Internal
             return new UnionFloat() { Value = value }.Binary;
             //unsafe{ return *(uint*)(&value); }
 #else
+            //BitConverter.GetBytes(value)
             throw new NotImplementedException();
 #endif
         }
@@ -1901,6 +1964,7 @@ namespace TimeSeriesDB.Internal
             return new UnionFloat() { Binary = value }.Value;
             //unsafe{ return *(float*)(&value); }
 #else
+            //BitConverter.ToSingle() / GetBytes()
             throw new NotImplementedException();
 #endif
         }
@@ -2043,6 +2107,46 @@ namespace TimeSeriesDB.Internal
         ///     Reads the bytes in hexadecimal format, assuming no prepending of any kind (0x).
         /// </summary>
         [MethodImpl(AggressiveInlining)]
+        public static byte[] HexDecode(string value) {
+            var len = value.Length;
+            if(len % 2 != 0)
+                throw new ArgumentException("Not a multiple of 2.", nameof(value));
+
+            int readIndex  = 0;
+            int writeIndex = 0;
+            var res        = new byte[len >> 1];
+
+            while(len > 0) {
+                res[writeIndex++] = unchecked((byte)((HexDecode(value[readIndex + 0]) << 4) | HexDecode(value[readIndex + 1])));
+                readIndex += 2;
+                len -= 2;
+            }
+
+            return res;
+        }
+        /// <summary>
+        ///     Reads the bytes in hexadecimal format, assuming no prepending of any kind (0x).
+        /// </summary>
+        [MethodImpl(AggressiveInlining)]
+        public static byte[] HexDecode(string value, int offset, int count) {
+            if(count != 0)
+                throw new ArgumentException("Not a multiple of 2.", nameof(count));
+
+            int writeIndex = 0;
+            var res        = new byte[count >> 1];
+
+            while(count > 0) {
+                res[writeIndex++] = unchecked((byte)((HexDecode(value[offset + 0]) << 4) | HexDecode(value[offset + 1])));
+                offset += 2;
+                count -= 2;
+            }
+
+            return res;
+        }
+        /// <summary>
+        ///     Reads the bytes in hexadecimal format, assuming no prepending of any kind (0x).
+        /// </summary>
+        [MethodImpl(AggressiveInlining)]
         public static void HexDecode(string source, int sourceOffset, int sourceCount, byte[] target, ref int offset) {
             if(sourceCount <= 0)
                 return;
@@ -2050,7 +2154,7 @@ namespace TimeSeriesDB.Internal
                 throw new ArgumentException("Not a multiple of 2.", nameof(sourceCount));
 
             while(sourceCount > 0) {
-                target[offset++] = unchecked((byte)((HexDecode(source[sourceOffset + 0]) << 4) & HexDecode(source[sourceOffset + 1])));
+                target[offset++] = unchecked((byte)((HexDecode(source[sourceOffset + 0]) << 4) | HexDecode(source[sourceOffset + 1])));
                 sourceOffset += 2;
                 sourceCount -= 2;
             }
@@ -2066,7 +2170,7 @@ namespace TimeSeriesDB.Internal
                 throw new ArgumentException("Not a multiple of 2.", nameof(sourceCount));
 
             while(sourceCount > 0) {
-                buffer[bufferOffset++] = unchecked((byte)((HexDecode(source[sourceOffset + 0]) << 4) & HexDecode(source[sourceOffset + 1])));
+                buffer[bufferOffset++] = unchecked((byte)((HexDecode(source[sourceOffset + 0]) << 4) | HexDecode(source[sourceOffset + 1])));
                 sourceOffset += 2;
                 if(bufferOffset == buffer.Length) {
                     destination.Write(buffer, 0, bufferOffset);
@@ -2084,7 +2188,10 @@ namespace TimeSeriesDB.Internal
             if(c <= 'f' && c >= 'a')
                 return c - 'a' + 10;
 
+            // dont throw since that prevents inlining
             throw new FormatException();
+
+            //return 0; 
         }
         #endregion
 
@@ -2495,217 +2602,6 @@ namespace TimeSeriesDB.Internal
             }
         }
         #endregion
-        #region static Fast_AtoI_UInt8()
-        /// <summary>
-        ///     Fast ascii-to-integer.
-        /// </summary>
-        [MethodImpl(AggressiveInlining)]
-        public static byte Fast_AtoI_UInt8(byte[] buffer, int offset, int count) {
-            byte res = 0;
-            switch(count) {
-                case 3: res  = unchecked((byte)((buffer[offset + count - 3] - '0') * 100)); goto case 2;
-                case 2: res += unchecked((byte)((buffer[offset + count - 2] - '0') * 10));  goto case 1;
-                case 1: res += unchecked((byte)((buffer[offset + count - 1] - '0') * 1));   break;
-                default:
-                    throw new FormatException();
-            }
-            return res;
-        }
-        #endregion
-        #region static Fast_AtoI_UInt16()
-        /// <summary>
-        ///     Fast ascii-to-integer.
-        /// </summary>
-        [MethodImpl(AggressiveInlining)]
-        public static ushort Fast_AtoI_UInt16(byte[] buffer, int offset, int count) {
-            ushort res = 0;
-            switch(count) {
-                case 5: res  = unchecked((ushort)((buffer[offset + count - 5] - '0') * 10000)); goto case 4;
-                case 4: res += unchecked((ushort)((buffer[offset + count - 4] - '0') * 1000));  goto case 3;
-                case 3: res += unchecked((ushort)((buffer[offset + count - 3] - '0') * 100));   goto case 2;
-                case 2: res += unchecked((ushort)((buffer[offset + count - 2] - '0') * 10));    goto case 1;
-                case 1: res += unchecked((ushort)((buffer[offset + count - 1] - '0') * 1));     break;
-                default:
-                    throw new FormatException();
-            }
-            return res;
-        }
-        #endregion
-        #region static Fast_AtoI_UInt32()
-        /// <summary>
-        ///     Fast ascii-to-integer.
-        /// </summary>
-        [MethodImpl(AggressiveInlining)]
-        public static uint Fast_AtoI_UInt32(byte[] buffer, int offset, int count) {
-            uint res = 0;
-            switch(count) {
-                case 10: res  = unchecked((uint)(buffer[offset + count - 10] - '0')) * 1000000000; goto case 9;
-                case 9:  res += unchecked((uint)(buffer[offset + count -  9] - '0')) * 100000000;  goto case 8;
-                case 8:  res += unchecked((uint)(buffer[offset + count -  8] - '0')) * 10000000;   goto case 7;
-                case 7:  res += unchecked((uint)(buffer[offset + count -  7] - '0')) * 1000000;    goto case 6;
-                case 6:  res += unchecked((uint)(buffer[offset + count -  6] - '0')) * 100000;     goto case 5;
-                case 5:  res += unchecked((uint)(buffer[offset + count -  5] - '0')) * 10000;      goto case 4;
-                case 4:  res += unchecked((uint)(buffer[offset + count -  4] - '0')) * 1000;       goto case 3;
-                case 3:  res += unchecked((uint)(buffer[offset + count -  3] - '0')) * 100;        goto case 2;
-                case 2:  res += unchecked((uint)(buffer[offset + count -  2] - '0')) * 10;         goto case 1;
-                case 1:  res += unchecked((uint)(buffer[offset + count -  1] - '0')) * 1;          break;
-                default:
-                    throw new FormatException();
-            }
-            return res;
-        }
-        #endregion
-        #region static Fast_AtoI_UInt64()
-        /// <summary>
-        ///     Fast ascii-to-integer.
-        /// </summary>
-        [MethodImpl(AggressiveInlining)]
-        public static ulong Fast_AtoI_UInt64(byte[] buffer, int offset, int count) {
-            ulong res = 0;
-            switch(count) {
-                case 20: res  = unchecked((ulong)(buffer[offset + count - 20] - '0')) * 10000000000000000000; goto case 19;
-                case 19: res += unchecked((ulong)(buffer[offset + count - 19] - '0')) * 1000000000000000000;  goto case 18;
-                case 18: res += unchecked((ulong)(buffer[offset + count - 18] - '0')) * 100000000000000000;   goto case 17;
-                case 17: res += unchecked((ulong)(buffer[offset + count - 17] - '0')) * 10000000000000000;    goto case 16;
-                case 16: res += unchecked((ulong)(buffer[offset + count - 16] - '0')) * 1000000000000000;     goto case 15;
-                case 15: res += unchecked((ulong)(buffer[offset + count - 15] - '0')) * 100000000000000;      goto case 14;
-                case 14: res += unchecked((ulong)(buffer[offset + count - 14] - '0')) * 10000000000000;       goto case 13;
-                case 13: res += unchecked((ulong)(buffer[offset + count - 13] - '0')) * 1000000000000;        goto case 12;
-                case 12: res += unchecked((ulong)(buffer[offset + count - 12] - '0')) * 100000000000;         goto case 11;
-                case 11: res += unchecked((ulong)(buffer[offset + count - 11] - '0')) * 10000000000;          goto case 10;
-                case 10: res += unchecked((ulong)(buffer[offset + count - 10] - '0')) * 1000000000;           goto case 9;
-                case 9:  res += unchecked((ulong)(buffer[offset + count -  9] - '0')) * 100000000;            goto case 8;
-                case 8:  res += unchecked((ulong)(buffer[offset + count -  8] - '0')) * 10000000;             goto case 7;
-                case 7:  res += unchecked((ulong)(buffer[offset + count -  7] - '0')) * 1000000;              goto case 6;
-                case 6:  res += unchecked((ulong)(buffer[offset + count -  6] - '0')) * 100000;               goto case 5;
-                case 5:  res += unchecked((ulong)(buffer[offset + count -  5] - '0')) * 10000;                goto case 4;
-                case 4:  res += unchecked((ulong)(buffer[offset + count -  4] - '0')) * 1000;                 goto case 3;
-                case 3:  res += unchecked((ulong)(buffer[offset + count -  3] - '0')) * 100;                  goto case 2;
-                case 2:  res += unchecked((ulong)(buffer[offset + count -  2] - '0')) * 10;                   goto case 1;
-                case 1:  res += unchecked((ulong)(buffer[offset + count -  1] - '0')) * 1;                    break;
-                default:
-                    throw new FormatException();
-            }
-            return res;
-        }
-        #endregion
-        #region static Fast_AtoI_Int8()
-        /// <summary>
-        ///     Fast ascii-to-integer.
-        /// </summary>
-        [MethodImpl(AggressiveInlining)]
-        public static sbyte Fast_AtoI_Int8(byte[] buffer, int offset, int count) {
-            bool is_negative = false;
-            if(buffer[offset] == '-') {
-                is_negative = true;
-                offset++;
-                count--;
-            }
-            sbyte res = 0;
-            switch(count) {
-                case 3: res  = unchecked((sbyte)((buffer[offset + count - 3] - '0') * 100)); goto case 2;
-                case 2: res += unchecked((sbyte)((buffer[offset + count - 2] - '0') * 10));  goto case 1;
-                case 1: res += unchecked((sbyte)((buffer[offset + count - 1] - '0') * 1));   break;
-                default:
-                    throw new FormatException();
-            }
-            return !is_negative ? res : unchecked((sbyte)-res);
-        }
-        #endregion
-        #region static Fast_AtoI_Int16()
-        /// <summary>
-        ///     Fast ascii-to-integer.
-        /// </summary>
-        [MethodImpl(AggressiveInlining)]
-        public static short Fast_AtoI_Int16(byte[] buffer, int offset, int count) {
-            bool is_negative = false;
-            if(buffer[offset] == '-') {
-                is_negative = true;
-                offset++;
-                count--;
-            }
-            short res = 0;
-            switch(count) {
-                case 5: res  = unchecked((short)((buffer[offset + count - 5] - '0') * 10000)); goto case 4;
-                case 4: res += unchecked((short)((buffer[offset + count - 4] - '0') * 1000));  goto case 3;
-                case 3: res += unchecked((short)((buffer[offset + count - 3] - '0') * 100));   goto case 2;
-                case 2: res += unchecked((short)((buffer[offset + count - 2] - '0') * 10));    goto case 1;
-                case 1: res += unchecked((short)((buffer[offset + count - 1] - '0') * 1));     break;
-                default:
-                    throw new FormatException();
-            }
-            return !is_negative ? res : unchecked((short)-res);
-        }
-        #endregion
-        #region static Fast_AtoI_Int32()
-        /// <summary>
-        ///     Fast ascii-to-integer.
-        /// </summary>
-        [MethodImpl(AggressiveInlining)]
-        public static int Fast_AtoI_Int32(byte[] buffer, int offset, int count) {
-            bool is_negative = false;
-            if(buffer[offset] == '-') {
-                is_negative = true;
-                offset++;
-                count--;
-            }
-            int res = 0;
-            switch(count) {
-                case 10: res  = (buffer[offset + count - 10] - '0') * 1000000000; goto case 9;
-                case 9:  res += (buffer[offset + count -  9] - '0') * 100000000;  goto case 8;
-                case 8:  res += (buffer[offset + count -  8] - '0') * 10000000;   goto case 7;
-                case 7:  res += (buffer[offset + count -  7] - '0') * 1000000;    goto case 6;
-                case 6:  res += (buffer[offset + count -  6] - '0') * 100000;     goto case 5;
-                case 5:  res += (buffer[offset + count -  5] - '0') * 10000;      goto case 4;
-                case 4:  res += (buffer[offset + count -  4] - '0') * 1000;       goto case 3;
-                case 3:  res += (buffer[offset + count -  3] - '0') * 100;        goto case 2;
-                case 2:  res += (buffer[offset + count -  2] - '0') * 10;         goto case 1;
-                case 1:  res += (buffer[offset + count -  1] - '0') * 1;          break;
-                default:
-                    throw new FormatException();
-            }
-            return !is_negative ? res : -res;
-        }
-        #endregion
-        #region static Fast_AtoI_Int64()
-        /// <summary>
-        ///     Fast ascii-to-integer.
-        /// </summary>
-        [MethodImpl(AggressiveInlining)]
-        public static long Fast_AtoI_Int64(byte[] buffer, int offset, int count) {
-            bool is_negative = false;
-            if(buffer[offset] == '-') {
-                is_negative = true;
-                offset++;
-                count--;
-            }
-            long res = 0;
-            switch(count) {
-                case 19: res  = (buffer[offset + count - 19] - '0') * 1000000000000000000;  goto case 18;
-                case 18: res += (buffer[offset + count - 18] - '0') * 100000000000000000;   goto case 17;
-                case 17: res += (buffer[offset + count - 17] - '0') * 10000000000000000;    goto case 16;
-                case 16: res += (buffer[offset + count - 16] - '0') * 1000000000000000;     goto case 15;
-                case 15: res += (buffer[offset + count - 15] - '0') * 100000000000000;      goto case 14;
-                case 14: res += (buffer[offset + count - 14] - '0') * 10000000000000;       goto case 13;
-                case 13: res += (buffer[offset + count - 13] - '0') * 1000000000000;        goto case 12;
-                case 12: res += (buffer[offset + count - 12] - '0') * 100000000000;         goto case 11;
-                case 11: res += (buffer[offset + count - 11] - '0') * 10000000000;          goto case 10;
-                case 10: res += (buffer[offset + count - 10] - '0') * 1000000000;           goto case 9;
-                case 9:  res += (buffer[offset + count -  9] - '0') * 100000000;            goto case 8;
-                case 8:  res += (buffer[offset + count -  8] - '0') * 10000000;             goto case 7;
-                case 7:  res += (buffer[offset + count -  7] - '0') * 1000000;              goto case 6;
-                case 6:  res += (buffer[offset + count -  6] - '0') * 100000;               goto case 5;
-                case 5:  res += (buffer[offset + count -  5] - '0') * 10000;                goto case 4;
-                case 4:  res += (buffer[offset + count -  4] - '0') * 1000;                 goto case 3;
-                case 3:  res += (buffer[offset + count -  3] - '0') * 100;                  goto case 2;
-                case 2:  res += (buffer[offset + count -  2] - '0') * 10;                   goto case 1;
-                case 1:  res += (buffer[offset + count -  1] - '0') * 1;                    break;
-                default:
-                    throw new FormatException();
-            }
-            return !is_negative ? res : -res;
-        }
-        #endregion
 
         #region static HumanizeByteSize()
         [MethodImpl(AggressiveInlining)]
@@ -2789,6 +2685,7 @@ namespace TimeSeriesDB.Internal
             }
 #else
             Buffer.BlockCopy(src, srcOffset, dst, dstOffset, count);
+            //new ReadOnlySpan<byte>(src, srcOffset, count).CopyTo(new Span<byte>(dst, dstOffset, count));
 #endif
 #endif
         }
@@ -2803,6 +2700,7 @@ namespace TimeSeriesDB.Internal
         [MethodImpl(AggressiveInlining)]
         public static int ByteArrayCompare(byte[] array1, byte[] array2) {
             var min = Math.Min(array1.Length, array2.Length);
+            // note: might want to redo this with span instead
             var diff = memcmp(array1, array2, min);
 
             if(diff != 0)
@@ -2815,6 +2713,7 @@ namespace TimeSeriesDB.Internal
         /// </summary>
         [MethodImpl(AggressiveInlining)]
         public static int ByteArrayCompare(byte[] array1, byte[] array2, long count) {
+            // note: might want to redo this with span instead
             return memcmp(array1, array2, count);
         }
         #endregion
@@ -2969,11 +2868,11 @@ namespace TimeSeriesDB.Internal
             var prevCopy = prev;
             if(Vector.IsHardwareAccelerated) {
                 var chunk = Vector<ulong>.Count;
-                if(count > chunk) {
+                if(count >= chunk * 2) {
                     var prevVector = new Vector<ulong>(buffer, offset);
                     buffer[offset] = prevCopy;
                     Vector<ulong> current = default;
-                    while(count > chunk) {
+                    while(count >= chunk * 2) {
                         current = new Vector<ulong>(buffer, offset + 1);
                         var next = new Vector<ulong>(buffer, offset + chunk);
                         (current - prevVector).CopyTo(buffer, offset + 1);
@@ -3018,11 +2917,11 @@ namespace TimeSeriesDB.Internal
             var prevCopy = prev;
             if(Vector.IsHardwareAccelerated) {
                 var chunk = Vector<uint>.Count;
-                if(count > chunk) {
+                if(count >= chunk * 2) {
                     var prevVector = new Vector<uint>(buffer, offset);
                     buffer[offset] -= prevCopy;
                     Vector<uint> current = default;
-                    while(count > chunk) {
+                    while(count >= chunk * 2) {
                         current = new Vector<uint>(buffer, offset + 1);
                         var next = new Vector<uint>(buffer, offset + chunk);
                         (current - prevVector).CopyTo(buffer, offset + 1);
@@ -3067,11 +2966,11 @@ namespace TimeSeriesDB.Internal
             var prevCopy = prev;
             if(Vector.IsHardwareAccelerated) {
                 var chunk = Vector<ushort>.Count;
-                if(count > chunk) {
+                if(count >= chunk * 2) {
                     var prevVector = new Vector<ushort>(buffer, offset);
                     buffer[offset] -= prevCopy;
                     Vector<ushort> current = default;
-                    while(count > chunk) {
+                    while(count >= chunk * 2) {
                         current = new Vector<ushort>(buffer, offset + 1);
                         var next = new Vector<ushort>(buffer, offset + chunk);
                         (current - prevVector).CopyTo(buffer, offset + 1);
@@ -3116,11 +3015,11 @@ namespace TimeSeriesDB.Internal
             var prevCopy = prev;
             if(Vector.IsHardwareAccelerated) {
                 var chunk = Vector<byte>.Count;
-                if(count > chunk) {
+                if(count >= chunk * 2) {
                     var prevVector = new Vector<byte>(buffer, offset);
                     buffer[offset] -= prevCopy;
                     Vector<byte> current = default;
-                    while(count > chunk) {
+                    while(count >= chunk * 2) {
                         current = new Vector<byte>(buffer, offset + 1);
                         var next = new Vector<byte>(buffer, offset + chunk);
                         (current - prevVector).CopyTo(buffer, offset + 1);
@@ -3165,11 +3064,11 @@ namespace TimeSeriesDB.Internal
             var prevCopy = prev;
             if(Vector.IsHardwareAccelerated) {
                 var chunk = Vector<long>.Count;
-                if(count > chunk) {
+                if(count >= chunk * 2) {
                     var prevVector = new Vector<long>(buffer, offset);
                     buffer[offset] -= prevCopy;
                     Vector<long> current = default;
-                    while(count > chunk) {
+                    while(count >= chunk * 2) {
                         current = new Vector<long>(buffer, offset + 1);
                         var next = new Vector<long>(buffer, offset + chunk);
                         (current - prevVector).CopyTo(buffer, offset + 1);
@@ -3214,11 +3113,11 @@ namespace TimeSeriesDB.Internal
             var prevCopy = prev;
             if(Vector.IsHardwareAccelerated) {
                 var chunk = Vector<int>.Count;
-                if(count > chunk) {
+                if(count >= chunk * 2) {
                     var prevVector = new Vector<int>(buffer, offset);
                     buffer[offset] -= prevCopy;
                     Vector<int> current = default;
-                    while(count > chunk) {
+                    while(count >= chunk * 2) {
                         current = new Vector<int>(buffer, offset + 1);
                         var next = new Vector<int>(buffer, offset + chunk);
                         (current - prevVector).CopyTo(buffer, offset + 1);
@@ -3263,11 +3162,11 @@ namespace TimeSeriesDB.Internal
             var prevCopy = prev;
             if(Vector.IsHardwareAccelerated) {
                 var chunk = Vector<short>.Count;
-                if(count > chunk) {
+                if(count >= chunk * 2) {
                     var prevVector = new Vector<short>(buffer, offset);
                     buffer[offset] -= prevCopy;
                     Vector<short> current = default;
-                    while(count > chunk) {
+                    while(count >= chunk * 2) {
                         current = new Vector<short>(buffer, offset + 1);
                         var next = new Vector<short>(buffer, offset + chunk);
                         (current - prevVector).CopyTo(buffer, offset + 1);
@@ -3312,11 +3211,11 @@ namespace TimeSeriesDB.Internal
             var prevCopy = prev;
             if(Vector.IsHardwareAccelerated) {
                 var chunk = Vector<sbyte>.Count;
-                if(count > chunk) {
+                if(count >= chunk * 2) {
                     var prevVector = new Vector<sbyte>(buffer, offset);
                     buffer[offset] -= prevCopy;
                     Vector<sbyte> current = default;
-                    while(count > chunk) {
+                    while(count >= chunk * 2) {
                         current = new Vector<sbyte>(buffer, offset + 1);
                         var next = new Vector<sbyte>(buffer, offset + chunk);
                         (current - prevVector).CopyTo(buffer, offset + 1);
@@ -3630,7 +3529,7 @@ namespace TimeSeriesDB.Internal
         ///     Generates all the permutations possible for the given source such that all possible orderings are returned.
         ///     Use result.ToArray() if you want to store the results, as the same instance is returned every time.
         ///     Outputs 'source.Length!' (factorial) results.
-        ///     ex: [A,B,C] -> {[A,B,C], [A,B,C], [B,A,C], [B,C,A], [C,A,B], [C,B,A]}
+        ///     ex: [A,B,C] -> {[A,B,C], [A,C,B], [B,A,C], [B,C,A], [C,A,B], [C,B,A]}
         /// </summary>
         /// <param name="filter">Filters sub results, short-circuiting the needless processings.</param>
         /// <param name="selector">Generates sub-items for one dimension/level/bucket. default = remaining.Where(o => o.Count > 0)</param>
@@ -3763,289 +3662,64 @@ namespace TimeSeriesDB.Internal
             public delegate IEnumerable<ItemToken> SubResultSelector(ItemToken[] remaining, T[] result, int len);
         }
         #endregion
-        #region static GenerateBucketedCombinations()
-        /// <summary>
-        ///     Buckets the items into separate dimensions.
-        ///     The results include the combinations per dimensions, but not the permutations.
-        ///     Ensures the items are uniquely assigned, not repeated per dimension per result.
-        ///     Keep in mind that this would generate an enormous amount of results; consequently the permutation method is to be handled by the caller.
-        ///     
-        ///     This will maintain dimensional ordering.
-        ///     
-        ///     For performance reasons, the same instance will be returned continually, so clone it if needed.
-        ///     Outputs [multiplicative product] of [2 exponent to the dimension size] results. (ie: 2^4 * 2^5 * 2^6)
-        /// </summary>
-        /// <param name="source">The items, filtered by the dimensions in which they can appear. The items may repeat across dimension filters, but the result will only bucket them into one dimension.</param>
-        /// <param name="filter">Filters sub results, short-circuiting the needless processings. You'll receive already valid result parts by this point, meaning no items will be duplicates.</param>
-        /// <param name="selector">default: (IEnumerable[T] current_dimension, T[] result, int len) => GenerateCombinations(current_dimension)</param>
-        /// <returns>T[dimension/bucket][items within bucket]. dimension/bucket matches source.Count().</returns>
-        public static IEnumerable<T[][]> GenerateBucketedCombinations<T>(IEnumerable<HashSet<T>> source, CombinationEnumerator<T[]>.SubResultFilter filter = null, CombinationEnumerator<T[]>.SubResultSelector selector = null) {
-            // example use:
-            //
-            //var itemss = new[] {
-            //    new HashSet<string>("pu1,dp1,pu2,dp2,pu3,dp3,pu4,dp4,pu5,dp5".Split(',')),
-            //    new HashSet<string>("pu1,dp1,pu2,dp2,pu3,dp3,pu4,dp4,pu5,dp5".Split(',')),
-            //};
-            //var now = DateTime.UtcNow;
-            //var res = Miscellaneous.GenerateBucketedCombinations(
-            //    itemss,
-            //    null,
-            //    //new Miscellaneous.CombinationEnumerator<string[]>.SubResultFilter((string[][] res2, int len) => {
-            //    //    // since results are not permuted/re-ordered, we must assume that within-dimension data is ordered 'legally'
-            //    //    if(len > 1) {
-            //    //        // don't let a drop occur before a pickup
-            //    //        var hash = new HashSet<string>();
-            //    //        for(int i = 0; i < len; i++) {
-            //    //            var d = res2[i];
-            //    //            var count = d.Length;
-            //    //            for(int j = 0; j < count; j++) {
-            //    //                if(d[j] != null && d[j].StartsWith("pu"))
-            //    //                    hash.Add(d[j]);
-            //    //            }
-            //    //            for(int j = 0; j < count; j++) {
-            //    //                if(d[j] != null && d[j].StartsWith("dp") && !hash.Remove("pu" + d[j].Substring(2)))
-            //    //                    return false;
-            //    //            }
-            //    //        }
-            //    //    }
-            //    //    return true;
-            //    //}),
-            //    new Miscellaneous.CombinationEnumerator<string[]>.SubResultSelector((IEnumerable<string[]> current_dimension, string[][] result, int len) => {
-            //        // don't let a drop occur before a pickup
-            //        var prev_pickups_missing_drop = new HashSet<string>();
-            //        for(int i = 0; i < len; i++) {
-            //            var d = result[i];
-            //            var count = d.Length;
-            //            for(int j = 0; j < count; j++) {
-            //                if(d[j] != null && d[j].StartsWith("pu"))
-            //                    prev_pickups_missing_drop.Add(d[j]);
-            //            }
-            //            for(int j = 0; j < count; j++) {
-            //                if(d[j] != null && d[j].StartsWith("dp") && !prev_pickups_missing_drop.Remove("pu" + d[j].Substring(2)))
-            //                    throw new InvalidOperationException("Generated drop before pickup.");
-            //            }
-            //        }
-            //
-            //        return Miscellaneous.GenerateCombinations(current_dimension)
-            //            .SelectMany(o => Miscellaneous.GeneratePermutations(o, new Miscellaneous.PermutationEnumerator<string>.SubResultFilter((string[] k, int len2) => {
-            //                var top = k[len2 - 1];
-            //                if(top != null && top.StartsWith("dp")) {
-            //                    var lookFor = "pu" + top.Substring(2);
-            //                    if(!prev_pickups_missing_drop.Contains(lookFor) &&
-            //                        !k.Take(len2 - 1).Any(m => string.CompareOrdinal(m, lookFor) == 0))
-            //                        // the drop needs the pickup within this bucket/dimension, which it hasn't seen yet,
-            //                        // so use another permutation until we do it properly
-            //                        return false;
-            //                }
-            //                if(len2 < 2)
-            //                    return true;
-            //                if(top != null) {
-            //                    // if at any point prior to current we have a hole (null with values on both sides), 
-            //                    // skip permutation since we want all nulls to be at the end (in order to remove redundant results, ie: [null,1,2] == [1,2,null])
-            //                    if(k.Skip(len2 - 2).First() == null)
-            //                        return false;
-            //                }
-            //
-            //                return true;
-            //            })));
-            //    })
-            //).Select(o => {
-            //    var x = (string[][])o.Clone();
-            //    for(int i = 0; i < x.Length; i++)
-            //        x[i] = x[i]?.Where(k => k != null).ToArray();
-            //    return x;
-            //}).Select(o => string.Join(",", o.Select(k => "{" + string.Join(",", k ?? new string[0]) + "}")))
-            //.ToList();
-            //var bench = DateTime.UtcNow - now;
+        #region static ChangeBase()
+        public static string ChangeBase(long value, string new_base = "ABCDEFGHIJKLMNOPQRSTUVWXYZ") {
+            var current = Math.Abs(value);
 
-            return new BucketedCombinationEnumerator<T>(source, filter, selector).List();
+            if(current >= 0 && current < new_base.Length) {
+                return value >= 0 ?
+                    new string(new_base[unchecked((int)value)], 1) :
+                    new string(new char[2] { '-', new_base[unchecked((int)value)] });
+            }
+
+            char[] res;
+            if(value > 0)
+                res = new char[unchecked((int)Math.Ceiling(Math.Log(current + 1, new_base.Length)))];
+            else {
+                res = new char[unchecked((int)Math.Ceiling(Math.Log(current + 1, new_base.Length)) + 1)];
+                res[0] = '-';
+            }
+
+            int index         = res.Length - 1;
+            int new_base_size = new_base.Length;
+
+            do {
+                res[index--] = new_base[unchecked((int)(current % new_base_size))];
+                current     /= new_base_size;
+            } while(current > 0);
+
+            return new string(res);
         }
+        #endregion
+        #region static Type.GetFriendlyName()
         /// <summary>
-        ///     Same as a CombinationEnumerator, but allows items to be present into multiple possible buckets.
-        ///     Only one bucket will be selected per item, and all of them will be assigned within every result.
+        ///     Returns the human-readable name for the type.
+        ///     ex: "List&lt;string&gt;"
         /// </summary>
-        private sealed class BucketedCombinationEnumerator<T> {
-            private readonly HashSet<T>[] m_sourceBackup;
-            private readonly T[][] m_result;
-            private readonly int m_dimensions;
-            private readonly HashSet<T>[] m_itemsMustExistByThatDimension;
-            private readonly HashSet<T>[] m_itemsUniqueAtDimension;
-            private readonly HashSet<T> m_assigned;
-            private readonly int m_uniqueItemsCount; // non-default values unique count
-            private readonly CombinationEnumerator<T[]>.SubResultFilter m_filter;
-            private readonly CombinationEnumerator<T[]>.SubResultSelector m_selector;
+        public static string GetFriendlyName(this Type type) {
+            var sb = new StringBuilder();
+            GetFriendlyNameRecurse(type, sb);
+            return sb.ToString();
+        }
+        private static void GetFriendlyNameRecurse(this Type type, StringBuilder sb) {
+            var name = type.Name;
 
-            /// <param name="source">The sub-items may be null or empty arrays.</param>
-            /// <param name="selector">default: (IEnumerable[T] current_dimension, T[] result, int len) => GenerateCombinations(current_dimension)</param>
-            public BucketedCombinationEnumerator(IEnumerable<HashSet<T>> source, CombinationEnumerator<T[]>.SubResultFilter filter = null, CombinationEnumerator<T[]>.SubResultSelector selector = null) {
-                m_sourceBackup = source as HashSet<T>[] ?? source.ToArray();
-                m_dimensions = m_sourceBackup.Length;
-                m_result = new T[m_sourceBackup.Length][];
-                m_filter = filter;
-                m_selector = selector;
-                m_assigned = new HashSet<T>();
-
-                for(int i = 0; i < m_dimensions; i++)
-                    if(m_sourceBackup[i].Any(o => object.Equals(o, default(T))))
-                        // the problem with some dimension having a valid default(T), is that we can't differentiate between
-                        // whether or not that was the default(T) or whether the item in bucket is just not present within that bucket
-                        // this could be fixed with sentinel value and/or keeping track of the columns that are default(T) rather than not present
-                        // but this significantly increases complexity for a case that isn't needed 
-                        throw new ArgumentException("Cannot generate combinations where one item is null/default(T).");
-
-                m_uniqueItemsCount = m_sourceBackup.SelectMany(o => o).Where(o => !object.Equals(o, default(T))).Distinct().Count();
-
-                var dimensions = m_sourceBackup.Length;
-                m_itemsUniqueAtDimension = new HashSet<T>[dimensions];
-                for(int i = 0; i < dimensions; i++) {
-                    var dimension = m_sourceBackup[i];
-
-                    m_itemsUniqueAtDimension[i] = new HashSet<T>(dimension.Where(o => {
-                        return !m_sourceBackup.Any(k => k != dimension && k.Contains(o));
-                    }));
-                }
-
-                // to do that efficiently, record the dimensions by which items must be found (since they dont exist later on)
-                m_itemsMustExistByThatDimension = new HashSet<T>[dimensions];
-                for(int i = 0; i < dimensions; i++) {
-                    var hash = new HashSet<T>();
-                    foreach(var item in m_sourceBackup[i]) {
-                        if(!m_sourceBackup.Skip(i + 1).Any(o => o.Contains(item))) {
-                            int start = 0;
-                            while(start < i) {
-                                if(m_sourceBackup[start].Contains(item))
-                                    break;
-                                start++;
-                            }
-                            hash.Add(item);
-                        }
-                    }
-                    m_itemsMustExistByThatDimension[i] = hash;
-                }
+            if(!type.IsGenericType) {
+                sb.Append(name);
+                return;
             }
-            public IEnumerable<T[][]> List() {
-                // there are many ways to code this, but using
-                // GenerateCombinations = 2^n results
-                // GeneratePermutations = n! results
-                // thus, we avoid at all costs calling GeneratePermutations(), offloading the task to the caller
 
-                // example usage
-                // -> trying to find all the scenarios in which a dispatch of 2 shipments (pickup/drop) can be done on an existing trip
-                // -> we try and insert pickup/drops within availabilities or travels
-                // -> trip: [availability] -> [pickup] -> [travel] -> [drop] -> [availability]
-                // -> every one of those avail/travel represent a dimention on which many combination/permutation of pickup/drop can be added unto
-                //
-                //                  (dimension 1)                (dimension 2)         (dimension 3)
-                //               | [availability] -> [pickup] -> [travel] -> [drop] -> [availability]
-                // --------------|---------------------------------------------------------------
-                // ship=1,scen=1 | pu1+dp1
-                // ship=1,scen=2 | pu1                           dp1
-                // ship=1,scen=3 | pu1                                                 dp1
-                // ship=1,scen=4 |                               pu1+dp1
-                // ship=1,scen=5 |                               pu1                   dp1
-                // ship=1,scen=6 |                                                     pu1+dp1
-                // ship=2,scen=1 | pu2+dp2
-                // ship=2,scen=2 | pu2                           dp2
-                // ship=2,scen=3 | pu2                                                 dp2
-                // ship=2,scen=4 |                               pu2+dp2
-                // ship=2,scen=5 |                               pu2                   dp2
-                // ship=2,scen=6 |                                                     pu2+dp2
-                //
-                // we try to bucket the pu1/dp1/pu2/dp2 across the dimensions, such that every one of them are assigned into just 1 dimension per result
-                //
-                // the algorithm works like this:
-                // foreach(dimension)
-                //    res = GenerateCombinations(elements_possible_within_dimension(dimension)) // combinations including nulls
-                //    filter(res)
-                // res = GenerateCombinations(all dimensions results)
-                // filter(res)
-                // return res
-                //
-                // if you need to GeneratePermutations(), do it on the results
+            sb.Append(name, 0, name.IndexOf('`'));
+            sb.Append('<');
 
-                if(m_sourceBackup.All(o => o == null || o.Count == 0))
-                    return Enumerable.Empty<T[][]>();
-
-                return this.List(0);
+            var parameters = type.GetGenericArguments();
+            for(int i = 0; i < parameters.Length; i++) {
+                if(i > 0)
+                    sb.Append(", ");
+                GetFriendlyNameRecurse(parameters[i], sb);
             }
-            private IEnumerable<T[][]> List(int depth) {
-                if(depth == m_dimensions) {
-                    // if last layer
-                    yield return m_result;
-                    yield break;
-                }
 
-                var dimension = m_sourceBackup[depth];
-
-                if(dimension == null || dimension.Count == 0) {
-                    // recurse
-                    foreach(var item in this.List(depth + 1))
-                        yield return item;
-                } else {
-                    // if everything is assigned
-                    if(m_assigned.Count == m_uniqueItemsCount) { // mini speedup 0.85s -> 0.79s
-                        // no need to recurse
-                        //Array.Clear(m_result, depth, m_dimensions - depth);
-                        for(int i = depth; i < m_dimensions; i++)
-                            m_result[i] = null; // new T[0]
-                        yield return m_result;
-                        yield break;
-                    }
-
-                    var must_exists = m_itemsUniqueAtDimension[depth];
-                    var ensure_exists = m_itemsMustExistByThatDimension[depth];
-
-                    // generate sub-dimension items
-                    var remaining_items = dimension
-                        .Where(o => {
-                            // don't list items we have already returned previously
-                            return !m_assigned.Contains(o);
-                        }).Select(o => {
-                            bool non_nullable = must_exists.Contains(o) ||
-                                (ensure_exists.Contains(o) && !m_assigned.Contains(o));
-                            return non_nullable ?
-                                new[] { o } : // speedup: if n is only valid within one dimension, force it to always occur in that dimension
-                                new[] { o, default };
-                        }).ToList();
-
-                    // if all items have already been assigned
-                    if(remaining_items.Count == 0) {
-                        // no need to recurse
-                        //Array.Clear(m_result, depth, m_dimensions - depth);
-                        for(int i = depth; i < m_dimensions; i++)
-                            m_result[i] = null; // new T[0]
-                        yield return m_result;
-                        yield break;
-                    }
-
-                    var dimension_items = m_selector == null ?
-                        GenerateCombinations(remaining_items) :
-                        m_selector(remaining_items, m_result, depth);
-
-                    foreach(var current in dimension_items) {
-                        m_result[depth] = current;
-
-                        var count = current.Length;
-                        for(int i = 0; i < count; i++) {
-                            var temp = current[i];
-                            if(!object.Equals(temp, default(T)))
-                                m_assigned.Add(temp);
-                        }
-
-                        if(m_filter == null || m_filter(m_result, depth + 1)) {
-                            // recurse until last layer
-                            foreach(var item in this.List(depth + 1))
-                                yield return item;
-                        }
-
-                        for(int i = 0; i < count; i++) {
-                            var temp = current[i];
-                            if(!object.Equals(temp, default(T)))
-                                m_assigned.Remove(temp);
-                        }
-                    }
-                }
-            }
+            sb.Append('>');
         }
         #endregion
     }

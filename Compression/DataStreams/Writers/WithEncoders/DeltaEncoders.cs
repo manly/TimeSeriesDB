@@ -290,11 +290,11 @@ namespace TimeSeriesDB.DataStreams.Writers.WithEncoders
         protected override void GetNext(long[] values, int offset, int count) {
             if(Vector.IsHardwareAccelerated) {
                 var chunk = Vector<long>.Count;
-                if(count > chunk) {
+                if(count >= chunk * 2) {
                     var prev = new Vector<long>(values, offset);
                     values[offset] -= m_prev; // this.InternalGetNext(ref values[offset]);
                     Vector<long> current = default;
-                    while(count > chunk) {
+                    while(count >= chunk * 2) {
                         current = new Vector<long>(values, offset + 1);
                         var next = new Vector<long>(values, offset + chunk);
                         (current - prev).CopyTo(values, offset + 1);
@@ -363,11 +363,11 @@ namespace TimeSeriesDB.DataStreams.Writers.WithEncoders
         protected override void GetNext(long[] values, int offset, int count) {
             if(Vector.IsHardwareAccelerated) {
                 var chunk = Vector<long>.Count;
-                if(count > chunk) {
+                if(count >= chunk * 2) {
                     var prev = new Vector<long>(values, offset);
                     values[offset] -= m_prev; // this.InternalGetNext(ref values[offset]);
                     Vector<long> current = default;
-                    while(count > chunk) {
+                    while(count >= chunk * 2) {
                         current = new Vector<long>(values, offset + 1);
                         var next = new Vector<long>(values, offset + chunk);
                         (current - prev).CopyTo(values, offset + 1);
@@ -436,11 +436,11 @@ namespace TimeSeriesDB.DataStreams.Writers.WithEncoders
         protected override void GetNext(int[] values, int offset, int count) {
             if(Vector.IsHardwareAccelerated) {
                 var chunk = Vector<int>.Count;
-                if(count > chunk) {
+                if(count >= chunk * 2) {
                     var prev = new Vector<int>(values, offset);
                     values[offset] -= m_prev; // this.InternalGetNext(ref values[offset]);
                     Vector<int> current = default;
-                    while(count > chunk) {
+                    while(count >= chunk * 2) {
                         current = new Vector<int>(values, offset + 1);
                         var next = new Vector<int>(values, offset + chunk);
                         (current - prev).CopyTo(values, offset + 1);
@@ -509,11 +509,11 @@ namespace TimeSeriesDB.DataStreams.Writers.WithEncoders
         protected override void GetNext(short[] values, int offset, int count) {
             if(Vector.IsHardwareAccelerated) {
                 var chunk = Vector<short>.Count;
-                if(count > chunk) {
+                if(count >= chunk * 2) {
                     var prev = new Vector<short>(values, offset);
                     values[offset] = unchecked((short)(values[offset] - m_prev)); // this.InternalGetNext(ref values[offset]);
                     Vector<short> current = default;
-                    while(count > chunk) {
+                    while(count >= chunk * 2) {
                         current = new Vector<short>(values, offset + 1);
                         var next = new Vector<short>(values, offset + chunk);
                         (current - prev).CopyTo(values, offset + 1);
@@ -582,11 +582,11 @@ namespace TimeSeriesDB.DataStreams.Writers.WithEncoders
         protected override void GetNext(sbyte[] values, int offset, int count) {
             if(Vector.IsHardwareAccelerated) {
                 var chunk = Vector<sbyte>.Count;
-                if(count > chunk) {
+                if(count >= chunk * 2) {
                     var prev = new Vector<sbyte>(values, offset);
                     values[offset] = unchecked((sbyte)(values[offset] - m_prev)); // this.InternalGetNext(ref values[offset]);
                     Vector<sbyte> current = default;
-                    while(count > chunk) {
+                    while(count >= chunk * 2) {
                         current = new Vector<sbyte>(values, offset + 1);
                         var next = new Vector<sbyte>(values, offset + chunk);
                         (current - prev).CopyTo(values, offset + 1);

@@ -78,18 +78,30 @@ namespace TimeSeriesDB.DataStreams.BaseClasses {
         }
         #endregion
         #region static DeltaRemove()
+        /// <summary>
+        ///     This method can be vectorized.
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ulong DeltaRemove(ulong value1, ulong value2) {
             return BitMethods.SignedToUnsigned(unchecked((long)(value1 - value2)));
         }
+        /// <summary>
+        ///     This method can be vectorized.
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static uint DeltaRemove(uint value1, uint value2) {
             return BitMethods.SignedToUnsigned(unchecked((int)(value1 - value2)));
         }
+        /// <summary>
+        ///     This method can be vectorized.
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ushort DeltaRemove(ushort value1, ushort value2) {
             return BitMethods.SignedToUnsigned(unchecked((short)(value1 - value2)));
         }
+        /// <summary>
+        ///     This method can be vectorized.
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static byte DeltaRemove(byte value1, byte value2) {
             //return BitMethods.SignedToUnsigned(unchecked((sbyte)(value1 - value2)));

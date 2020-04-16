@@ -19,16 +19,16 @@ namespace TimeSeriesDB.DataStreams.Writers
         protected override void ConvertToBuffer(long[] values, int offset, int count) {
             int write = 0;
             while(count >= 16) {
-                m_buffer[write + 0] = this.InternalConvert(values[offset + 0]);
-                m_buffer[write + 1] = this.InternalConvert(values[offset + 1]);
-                m_buffer[write + 2] = this.InternalConvert(values[offset + 2]);
-                m_buffer[write + 3] = this.InternalConvert(values[offset + 3]);
-                m_buffer[write + 4] = this.InternalConvert(values[offset + 4]);
-                m_buffer[write + 5] = this.InternalConvert(values[offset + 5]);
-                m_buffer[write + 6] = this.InternalConvert(values[offset + 6]);
-                m_buffer[write + 7] = this.InternalConvert(values[offset + 7]);
-                m_buffer[write + 8] = this.InternalConvert(values[offset + 8]);
-                m_buffer[write + 9] = this.InternalConvert(values[offset + 9]);
+                m_buffer[write + 0]  = this.InternalConvert(values[offset + 0]);
+                m_buffer[write + 1]  = this.InternalConvert(values[offset + 1]);
+                m_buffer[write + 2]  = this.InternalConvert(values[offset + 2]);
+                m_buffer[write + 3]  = this.InternalConvert(values[offset + 3]);
+                m_buffer[write + 4]  = this.InternalConvert(values[offset + 4]);
+                m_buffer[write + 5]  = this.InternalConvert(values[offset + 5]);
+                m_buffer[write + 6]  = this.InternalConvert(values[offset + 6]);
+                m_buffer[write + 7]  = this.InternalConvert(values[offset + 7]);
+                m_buffer[write + 8]  = this.InternalConvert(values[offset + 8]);
+                m_buffer[write + 9]  = this.InternalConvert(values[offset + 9]);
                 m_buffer[write + 10] = this.InternalConvert(values[offset + 10]);
                 m_buffer[write + 11] = this.InternalConvert(values[offset + 11]);
                 m_buffer[write + 12] = this.InternalConvert(values[offset + 12]);
@@ -45,6 +45,7 @@ namespace TimeSeriesDB.DataStreams.Writers
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private ulong InternalConvert(long value) {
+            // todo: (for performance boost) vectorize this call
             return BitMethods.SignedToUnsigned(value);
         }
 

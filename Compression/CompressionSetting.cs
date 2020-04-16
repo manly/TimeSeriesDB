@@ -130,7 +130,7 @@ namespace TimeSeriesDB
                 return false;
             return
                 this.Algorithm == other.Algorithm &&
-                string.CompareOrdinal(this.Level, other.Level) == 0;
+                this.Level == other.Level;
         }
         public override bool Equals(object obj) {
             if(obj == null || !(obj is CompressionSetting))

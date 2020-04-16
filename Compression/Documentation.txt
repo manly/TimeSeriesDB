@@ -19,8 +19,11 @@
 
 // potential fix for CPU intrinsics
 // todo: update code to try this?
-http://xoofx.com/blog/2018/04/12/writing-managed-jit-in-csharp-with-coreclr/
+https://blogs.msdn.microsoft.com/dotnet/2018/10/10/using-net-hardware-intrinsics-api-to-accelerate-machine-learning-scenarios/
+https://github.com/dotnet/machinelearning/blob/master/src/Microsoft.ML.CpuMath/CpuMathUtils.netcoreapp.cs
+Lzcnt    3 methods    8    System.Runtime.Intrinsics.X86.Lzcnt
 
+http://xoofx.com/blog/2018/04/12/writing-managed-jit-in-csharp-with-coreclr/
 
 
 // for performance reasons, every column will be faster to read/write when using the unsigned version of it.

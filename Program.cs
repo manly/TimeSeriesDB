@@ -3,16 +3,18 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Globalization;
 
 using TimeSeriesDB.IO;
 using TimeSeriesDB.Internal;
 
 namespace TimeSeriesDB {
     class Program {
+
         private static void a() {
             ////var csvwr = new CsvStreamWriter(new System.IO.FileStream("d:\\test.csv", System.IO.FileMode.Append, System.IO.FileAccess.Write));
             //var csvr = new CsvStreamReader(new System.IO.FileStream("d:\\test.csv", System.IO.FileMode.Open, System.IO.FileAccess.Read));
-
+            //var csvr = new CsvStreamReader("C:\\Users\\Marton\\Desktop\\Dropbox\\AdaptiveRadixTree\\qq.txt");
 
             /*var r = new CsvStreamReader(System.IO.File.OpenRead("d:\\double_0001.csv"));
             DateTime[] x1 = new DateTime[100000];

@@ -142,7 +142,7 @@ namespace TimeSeriesDB
             if(this.UniqueID != other.UniqueID ||
                 this.Columns.Length != other.Columns.Length ||
                 this.Tags.Count != other.Tags.Count ||
-                string.CompareOrdinal(this.Name, other.Name) != 0)
+                this.Name != other.Name)
                 return false;
 
             // check columns
@@ -158,8 +158,8 @@ namespace TimeSeriesDB
             foreach(var tag in this.Tags) {
                 if(!tags2.MoveNext())
                     return false;
-                if(string.CompareOrdinal(tag.Key, tags2.Current.Key) != 0 ||
-                    string.CompareOrdinal(tag.Value, tags2.Current.Value) != 0)
+                if(tag.Key != tags2.Current.Key ||
+                    tag.Value != tags2.Current.Value)
                     return false;
             }
             if(tags2.MoveNext())
