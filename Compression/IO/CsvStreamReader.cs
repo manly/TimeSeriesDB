@@ -31,7 +31,7 @@ namespace TimeSeriesDB.IO
 
         private readonly List<byte[]> m_rowBuffers = new List<byte[]>(); // in order, from oldest to newest
 
-        private readonly Decoder m_decoder       = Encoding.UTF8.GetDecoder();
+        private readonly Decoder m_decoder; // even though this is detected by BOM preamble, everything assumes UTF-8 and wont detect end of string "..." properly
         private readonly char[] m_charBuffer     = new char[BUFFER_SIZE];
         private readonly byte[] m_csvValueBuffer = new byte[CSVVALUE_SIZE];
         private readonly bool m_closeStreamOnDispose;
@@ -62,14 +62,14 @@ namespace TimeSeriesDB.IO
             for(int i = 0; i < m_current.Length; i++)
                 m_current[i].Owner = this;
 
-            //m_encoding = Encoding.UTF8;
+            m_decoder = Encoding.UTF8.GetDecoder();
             if(this.ReadNextBuffer()) {
                 var preamble = this.DetectEncodingPreamble();
                 if(preamble == null)
                     m_bomPreambleLength = 0;
                 else {
                     m_bomPreambleLength = preamble.Length;
-                    //m_encoding = preamble.Encoding;
+                    m_decoder = preamble.Encoding.GetDecoder(); // beware that this only works for strings, as all type interpretations assume UTF-8
                     m_offset += preamble.Length;
                     m_read   -= preamble.Length;
                 }
@@ -544,9 +544,11 @@ namespace TimeSeriesDB.IO
 
             IEnumerable<PreambleNode> Recurse(PreambleNode n) {
                 yield return n;
-                foreach(var child in n.Children.Values)
-                    foreach(var item in Recurse(child))
-                        yield return item;
+                if(n.Children != null) {
+                    foreach(var child in n.Children.Values)
+                        foreach(var item in Recurse(child))
+                            yield return item;
+                }
             }
         }
         private class PreambleNode {
