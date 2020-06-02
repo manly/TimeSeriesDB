@@ -358,7 +358,7 @@ namespace TimeSeriesDB.IO
                 for(int i = 0; i < mappingsBackup.Length; i++) {
                     var mapping = mappingsBackup[i];
 
-                    if(mapping.ColumnIndex >= this.Current.Length) {
+                    if(mapping.ColumnIndex >= this.ColumnCount) {
                         // notify that the value could not be read
                         mapping.SetUnparsedValue?.Invoke(_new, null);
                         continue;
