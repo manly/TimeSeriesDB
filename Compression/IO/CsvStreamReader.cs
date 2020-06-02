@@ -71,7 +71,7 @@ namespace TimeSeriesDB.IO
                     m_bomPreambleLength = preamble.Length;
                     m_decoder = preamble.Encoding.GetDecoder(); // beware that this only works for strings, as all type interpretations assume UTF-8
                     m_offset += preamble.Length;
-                    m_read   -= preamble.Length;
+                    //m_read   -= preamble.Length;
                 }
 
                 if(auto_detect_column_separator)
