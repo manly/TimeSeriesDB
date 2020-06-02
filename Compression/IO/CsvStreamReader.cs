@@ -10,7 +10,7 @@ using static System.Runtime.CompilerServices.MethodImplOptions;
 
 namespace TimeSeriesDB.IO
 {
-/// <summary>
+    /// <summary>
     ///     Efficient CSV file reader.
     ///     This is significantly faster than StreamReader/StringReader because no convertion takes place and all reads are hand-coded for speed.
     ///     Everything is decoded in UTF-8.
@@ -22,10 +22,12 @@ namespace TimeSeriesDB.IO
         private const int CSVVALUE_SIZE = 64;
 
         private readonly Stream m_stream;
-        private byte[] m_buffer         = new byte[BUFFER_SIZE];
-        private byte[] m_buffer2        = new byte[BUFFER_SIZE];
-        private int m_offset            = 0; // in m_buffer
-        private int m_read              = 0; // in m_buffer
+        private byte[] m_buffer  = new byte[BUFFER_SIZE];
+        private byte[] m_buffer2 = new byte[BUFFER_SIZE];
+        private int m_offset     = 0; // in m_buffer
+        private int m_read       = 0; // in m_buffer
+
+        private readonly byte m_bomPreambleLength = 0; // the byte order mark, ie: encoding preamble
 
         private readonly List<byte[]> m_rowBuffers = new List<byte[]>(); // in order, from oldest to newest
 
@@ -48,6 +50,8 @@ namespace TimeSeriesDB.IO
                 throw new ArgumentOutOfRangeException($"{nameof(CSVVALUE_SIZE)} must be >= 38 to fit a full Guid.");
             if(BUFFER_SIZE < CSVVALUE_SIZE)
                 throw new ArgumentOutOfRangeException($"{nameof(BUFFER_SIZE)} must be >= {nameof(CSVVALUE_SIZE)}");
+
+            m_rootPreamble = BuildEncodingPreambleTree();
         }
         /// <param name="auto_detect_column_separator">If true, will read the first line of the stream and assume its a header row, and look at the non-alphanumeric characters to detect which re-occurs the most and use that one.</param>
         public CsvStreamReader(Stream stream, bool close_stream_on_dispose = true, bool auto_detect_column_separator = true) {
@@ -58,8 +62,21 @@ namespace TimeSeriesDB.IO
             for(int i = 0; i < m_current.Length; i++)
                 m_current[i].Owner = this;
 
-            if(auto_detect_column_separator && this.ReadNextBuffer())
-                this.ColumnSeparator = AutoDetectColumnSeparator(m_buffer, m_offset, m_read);
+            //m_encoding = Encoding.UTF8;
+            if(this.ReadNextBuffer()) {
+                var preamble = this.DetectEncodingPreamble();
+                if(preamble == null)
+                    m_bomPreambleLength = 0;
+                else {
+                    m_bomPreambleLength = preamble.Length;
+                    //m_encoding = preamble.Encoding;
+                    m_offset += preamble.Length;
+                    m_read   -= preamble.Length;
+                }
+
+                if(auto_detect_column_separator)
+                    this.ColumnSeparator = AutoDetectColumnSeparator(m_buffer, m_offset, m_read);
+            }
         }
         /// <param name="auto_detect_column_separator">If true, will read the first line of the stream and assume its a header row, and look at the non-alphanumeric characters to detect which re-occurs the most and use that one.</param>
         public CsvStreamReader(string path, bool close_stream_on_dispose = true, bool auto_detect_column_separator = true) 
@@ -327,11 +344,11 @@ namespace TimeSeriesDB.IO
         /// <summary>
         ///     Parses all the rows into properly interpreted values.
         /// </summary>
-        public IEnumerable<TEntity> ParseRows<TEntity>(bool header_read, IEnumerable<ColumnMapping<TEntity>> mappings, Func<TEntity> generator) {
+        public IEnumerable<TEntity> ParseRows<TEntity>(bool read_header, IEnumerable<ColumnMapping<TEntity>> mappings, Func<TEntity> generator) {
             var mappingsBackup = mappings.ToArray();
 
             // skip header if applicable
-            if(!header_read && this.GetColumnNames() == null)
+            if(!read_header && this.GetColumnNames() == null)
                 yield break;
 
             while(this.MoveNext()) {
@@ -479,6 +496,63 @@ namespace TimeSeriesDB.IO
 
                 m_stream.Position = pos;
             }
+        }
+        #endregion
+        #region private DetectEncodingPreamble()
+        private PreambleNode DetectEncodingPreamble() {
+            var c = m_rootPreamble;
+
+            for(int i = 0; i < m_read; i++) {
+                var b = m_buffer[m_offset + i];
+                if(!c.Children.TryGetValue(b, out c))
+                    break;
+                if(c.Encoding != null)
+                    return c;
+            }
+            return null;
+        }
+        #endregion
+        #region private static BuildEncodingPreambleTree()
+        private static readonly PreambleNode m_rootPreamble;
+        private static PreambleNode BuildEncodingPreambleTree() {
+            var encodings = Encoding.GetEncodings()
+                .Select(o => {
+                    var encoding = o.GetEncoding();
+                    return new { Encoding = encoding, Preamble = encoding.GetPreamble() };
+                });
+
+            // build hash tree
+            var root = new PreambleNode();
+            foreach(var encoding in encodings) {
+                var c = root;
+                foreach(var b in encoding.Preamble) {
+                    if(!c.Children.TryGetValue(b, out var child)) {
+                        child = new PreambleNode();
+                        c.Children.Add(b, child);
+                    }
+                    c = child;
+                }
+                c.Encoding = encoding.Encoding;
+                c.Length   = (byte)encoding.Preamble.Length;
+            }
+            // remove "leafs"
+            foreach(var node in Recurse(root))
+                if(node.Children.Count == 0)
+                    node.Children = null;
+
+            return root;
+
+            IEnumerable<PreambleNode> Recurse(PreambleNode n) {
+                yield return n;
+                foreach(var child in n.Children.Values)
+                    foreach(var item in Recurse(child))
+                        yield return item;
+            }
+        }
+        private class PreambleNode {
+            public Dictionary<byte, PreambleNode> Children = new Dictionary<byte, PreambleNode>();
+            public byte Length; // depth
+            public Encoding Encoding;
         }
         #endregion
 
@@ -649,7 +723,7 @@ namespace TimeSeriesDB.IO
             var res = new DetectedColumns();
 
             try {
-                m_stream.Position = 0;
+                m_stream.Position = m_bomPreambleLength;
                 using(var copy = new CsvStreamReader(m_stream, false)) {
                     // copy column names (which may be auto-assigned ie: Column1)
                     var columnNames = copy.GetColumnNames();
